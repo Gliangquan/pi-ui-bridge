@@ -1,0 +1,9 @@
+{
+  "name": "@pi-ui-bridge/pi-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

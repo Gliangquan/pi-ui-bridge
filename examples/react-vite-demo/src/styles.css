@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f8fafc; color: #0f172a; }
+.page-shell { max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px; }
+.hero-panel { display: flex; justify-content: space-between; gap: 24px; padding: 28px; border-radius: 24px; background: linear-gradient(135deg, #dbeafe, #eff6ff); margin-bottom: 24px; }
+.hero-panel__copy { max-width: 620px; }
+.eyebrow { display: inline-block; margin-bottom: 12px; color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.hero-panel h1 { margin: 0 0 12px; font-size: 38px; line-height: 1.1; }
+.hero-panel p { margin: 0; color: #334155; font-size: 16px; line-height: 1.6; }
+.hero-panel__actions { display: flex; align-items: flex-start; gap: 12px; }
+.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.feature-card { padding: 20px; border-radius: 18px; background: white; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); }
+.feature-card h2 { margin: 0 0 10px; font-size: 20px; }
+.feature-card p { margin: 0 0 16px; color: #475569; line-height: 1.6; }
+button { cursor: pointer; }
+.primary-btn, .ghost-btn, .secondary-btn { padding: 12px 16px; border-radius: 12px; font-weight: 600; }
+.primary-btn { border: none; background: #dc2626; color: white; }
+.ghost-btn { border: 1px solid #93c5fd; background: rgba(255,255,255,0.7); color: #1d4ed8; }
+.secondary-btn { border: none; background: #0f172a; color: white; }
+@media (max-width: 900px) { .hero-panel { flex-direction: column; } .feature-grid { grid-template-columns: 1fr; } }

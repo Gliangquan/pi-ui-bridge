@@ -1,0 +1,18 @@
+{
+  "name": "@pi-ui-bridge/source-binder-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.28.5",
+    "@babel/traverse": "^7.28.5",
+    "@babel/types": "^7.28.5",
+    "magic-string": "^0.30.18"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0"
+  }
+}

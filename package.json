@@ -1,0 +1,35 @@
+{
+  "name": "pi-ui-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UI-to-code bridge for pi-coding-agent",
+  "packageManager": "pnpm@9.15.0",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "browser-extension",
+    "ui-runtime",
+    "source-binding"
+  ],
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "build:browser-extension": "pnpm --filter @pi-ui-bridge/browser-extension build",
+    "dev:react-demo": "pnpm --filter @pi-ui-bridge/react-vite-demo dev",
+    "lint": "echo 'lint not configured yet'",
+    "dev": "echo 'dev entry will be added in v0.1 implementation'"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "^0.34.41",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 ## 1. 启动方式
 
-### 方式 A：注册到 `~/.pi/agent` 后直接启动
+### 方式 A：安装到 `~/.pi/agent` 后直接启动
 
 ```bash
 cd pi-ui-bridge
@@ -20,7 +20,7 @@ pi -e ./extensions/pi-ui-bridge/index.ts
 ## 2. 在 pi 中启动 bridge
 
 ```text
-/ui-start
+/pi-ui:start
 ```
 
 记录输出的：
@@ -104,7 +104,7 @@ curl -X POST http://127.0.0.1:<port>/apply \
 此时可在 pi 中执行：
 
 ```text
-/ui-status
+/pi-ui:status
 ```
 
 后续也可通过工具读取最近请求上下文。
@@ -131,6 +131,6 @@ pnpm dev:react-demo
 ## 7. 查看状态
 
 ```text
-/ui-status
-/ui-last
+/pi-ui:status
+/pi-ui:last
 ```

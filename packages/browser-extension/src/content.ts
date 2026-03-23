@@ -837,6 +837,11 @@ async function copyText(text: string): Promise<void> {
   textarea.remove();
 }
 
+function closeTransientUi(state: PanelState) {
+  state.domModalOpen = false;
+  state.childrenExpanded = false;
+}
+
 function buildDomExplorerMarkup(state: PanelState): string {
   if (!state.selectedElement) {
     return `<div class="piui-empty">${escapeHtml(t(state, "noSelection"))}</div>`;
@@ -1087,7 +1092,10 @@ async function boot() {
     toggleSelectButton?.addEventListener("click", () => {
       state.selecting = !state.selecting;
       state.statusText = state.selecting ? t(state, "selectingEnabled") : t(state, "selectingDisabled");
-      if (!state.selecting) state.hoveredElement = null;
+      if (!state.selecting) {
+        state.hoveredElement = null;
+        closeTransientUi(state);
+      }
       renderAll();
     });
     refreshButton?.addEventListener("click", () => { void loadRuntime(); });
@@ -1123,7 +1131,7 @@ async function boot() {
   }
 
   function renderInlineComposer() {
-    if (!state.selectedElement) {
+    if (!state.selectedElement || !state.selecting) {
       inlineComposer.style.display = "none";
       return;
     }
@@ -1148,6 +1156,15 @@ async function boot() {
     const sendButton = inlineComposer.querySelector<HTMLButtonElement>("#piuiInlineSend");
     const domButton = inlineComposer.querySelector<HTMLButtonElement>("#piuiInlineDom");
     prompt?.addEventListener("input", () => { state.promptDraft = prompt.value; });
+    prompt?.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    prompt?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    prompt?.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+    });
     domButton?.addEventListener("click", () => { state.domModalOpen = true; renderAll(); });
     sendButton?.addEventListener("click", async () => {
       if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
@@ -1323,6 +1340,16 @@ async function boot() {
     state.domModalOpen = false;
     renderAll();
   });
+
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (isInsideUi(event)) {
+        event.stopPropagation();
+      }
+    },
+    true
+  );
 
   document.addEventListener(
     "mousemove",

@@ -16,6 +16,7 @@
     "build:browser-extension": "pnpm --filter @pi-ui-bridge/browser-extension build",
     "dev:react-demo": "pnpm --filter @pi-ui-bridge/react-vite-demo dev",
     "install:pi": "node ./scripts/install-to-pi.mjs",
+    "uninstall:pi": "node ./scripts/uninstall-from-pi.mjs",
     "lint": "echo 'lint not configured yet'",
     "dev": "echo 'dev entry will be added in v0.1 implementation'"
   },

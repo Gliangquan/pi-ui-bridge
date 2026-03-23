@@ -46,10 +46,10 @@ examples/                runnable examples
 
 After loading the local extension in Pi, these commands are available:
 
-- `/ui-start`
-- `/ui-stop`
-- `/ui-status`
-- `/ui-last`
+- `/pi-ui:start`
+- `/pi-ui:stop`
+- `/pi-ui:status`
+- `/pi-ui:last`
 
 ## HTTP endpoints
 
@@ -75,7 +75,7 @@ cd pi-ui-bridge
 pnpm install:pi
 ```
 
-This writes the current project path into `~/.pi/agent/settings.json` as a Pi package source.
+This syncs the project into `~/.pi/agent/pi-ui-bridge` and updates `~/.pi/agent/settings.json` to load that installed copy.
 
 Then just start Pi normally:
 
@@ -84,12 +84,6 @@ pi
 ```
 
 Inside Pi:
-
-```text
-/ui-start
-```
-
-You can also use the namespaced alias:
 
 ```text
 /pi-ui:start
@@ -107,7 +101,7 @@ pi -e ./extensions/pi-ui-bridge/index.ts
 Inside Pi:
 
 ```text
-/ui-start
+/pi-ui:start
 ```
 
 This prints:
@@ -216,7 +210,7 @@ It includes:
 
 1. open a terminal in the project root
 2. start Pi with the extension
-3. run `/ui-start`
+3. run `/pi-ui:start`
 4. copy the `bridgeUrl` and `token`
 
 ### Connect the browser page

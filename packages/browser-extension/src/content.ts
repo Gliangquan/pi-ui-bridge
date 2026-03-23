@@ -13,6 +13,7 @@ type PanelState = {
   collapsed: boolean;
   selecting: boolean;
   domModalOpen: boolean;
+  composerOpen: boolean;
   childrenExpanded: boolean;
   promptDraft: string;
   statusText: string;
@@ -839,6 +840,7 @@ async function copyText(text: string): Promise<void> {
 
 function closeTransientUi(state: PanelState) {
   state.domModalOpen = false;
+  state.composerOpen = false;
   state.childrenExpanded = false;
 }
 
@@ -936,6 +938,7 @@ async function boot() {
     collapsed: false,
     selecting: true,
     domModalOpen: false,
+    composerOpen: false,
     childrenExpanded: false,
     promptDraft: "",
     statusText: STRINGS[getInitialLocale()].waiting,
@@ -1099,7 +1102,15 @@ async function boot() {
       renderAll();
     });
     refreshButton?.addEventListener("click", () => { void loadRuntime(); });
-    openDomButton?.addEventListener("click", () => { state.domModalOpen = true; renderAll(); });
+    openDomButton?.addEventListener("click", () => {
+      if (!state.selectedElement || !state.selecting) {
+        state.statusText = t(state, "noElement");
+        renderAll();
+        return;
+      }
+      state.domModalOpen = true;
+      renderAll();
+    });
     locateSourceButton?.addEventListener("click", async () => {
       if (!state.selectedSourceHint?.file && !state.selectedSourceHint?.sourceId) {
         state.statusText = t(state, "sourceMissing");
@@ -1127,11 +1138,20 @@ async function boot() {
       state.statusText = t(state, "copiedJson");
       renderAll();
     });
-    focusComposerButton?.addEventListener("click", () => { state.collapsed = false; renderAll(); });
+    focusComposerButton?.addEventListener("click", () => {
+      if (!state.selectedElement || !state.selecting) {
+        state.statusText = t(state, "noElement");
+        renderAll();
+        return;
+      }
+      state.collapsed = false;
+      state.composerOpen = true;
+      renderAll();
+    });
   }
 
   function renderInlineComposer() {
-    if (!state.selectedElement || !state.selecting) {
+    if (!state.selectedElement || !state.selecting || !state.composerOpen) {
       inlineComposer.style.display = "none";
       return;
     }
@@ -1165,7 +1185,10 @@ async function boot() {
     prompt?.addEventListener("keydown", (event) => {
       event.stopPropagation();
     });
-    domButton?.addEventListener("click", () => { state.domModalOpen = true; renderAll(); });
+    domButton?.addEventListener("click", () => {
+      state.domModalOpen = true;
+      renderAll();
+    });
     sendButton?.addEventListener("click", async () => {
       if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
         state.statusText = t(state, "notConnected");
@@ -1291,6 +1314,7 @@ async function boot() {
     state.selectedSourceHint = getSourceHint(promoted);
     state.hoveredElement = promoted;
     state.childrenExpanded = false;
+    state.composerOpen = true;
     state.statusText = t(state, "selectedRecorded");
     renderAll();
 

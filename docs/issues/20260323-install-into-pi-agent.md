@@ -14,22 +14,22 @@
 
 - [x] 阅读 Pi package / extension 文档，确认官方安装方式
 - [x] 对照 `game:*` 扩展，确认 auto-discovery 与命令注册方式
-- [x] 为项目增加注册到 `~/.pi/agent/settings.json` 的安装脚本
-- [x] 增加命令别名，支持 `/pi-ui:start` 风格
+- [x] 为项目增加安装脚本，自动同步到 `~/.pi/agent/pi-ui-bridge`
+- [x] 改为仅保留 `/pi-ui:*` 命令风格
 - [x] 更新 README 与本地联调文档
-- [ ] 后续补充 `pi remove` / 卸载脚本
+- [x] 补充 `uninstall:pi` 卸载脚本
 - [ ] 后续发布 npm/git package，支持 `pi install npm:...`
 
 ## Acceptance Criteria
 
-- 在项目根执行安装脚本后，`~/.pi/agent/settings.json` 出现该项目路径
+- 在项目根执行安装脚本后，`~/.pi/agent/pi-ui-bridge` 存在安装副本
+- `~/.pi/agent/settings.json` 仅保留安装副本路径，不保留开发路径
 - 后续直接执行 `pi` 时可加载 Pi UI Bridge
-- 在 Pi 中可使用 `/ui-start`
-- 在 Pi 中可使用 `/pi-ui:start`
+- 在 Pi 中仅使用 `/pi-ui:start`
 - README 与 guide 明确说明两种启动方式
 
 ## Notes
 
-- 官方推荐方式是把项目作为 Pi package source 写入 `settings.json` 的 `packages`
+- 当前安装方案为同步安装副本到 `~/.pi/agent/pi-ui-bridge`，再在 `settings.json` 中引用该副本
 - `game:*` 命令本质上只是 auto-discovered extension 里的 `registerCommand(...)`
-- 不需要把源码物理复制到 `~/.pi/agent/extensions/`，直接注册 package source 更稳
+- 为避免开发目录与安装目录双加载，安装脚本会自动去重并优先保留安装副本

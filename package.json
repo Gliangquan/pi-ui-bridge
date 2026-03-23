@@ -1,7 +1,7 @@
 {
   "name": "pi-ui-bridge",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "UI-to-code bridge for pi-coding-agent",
   "packageManager": "pnpm@9.15.0",
   "keywords": [

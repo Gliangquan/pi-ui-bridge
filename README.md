@@ -72,6 +72,7 @@ After loading the local extension in Pi, these commands are available:
 
 ```bash
 cd pi-ui-bridge
+pnpm install
 pnpm install:pi
 ```
 
@@ -87,6 +88,21 @@ Inside Pi:
 
 ```text
 /pi-ui:start
+```
+
+### Update an existing install
+
+After pulling new changes from GitHub, run:
+
+```bash
+pnpm install
+pnpm install:pi
+```
+
+### Uninstall from Pi
+
+```bash
+pnpm uninstall:pi
 ```
 
 ### Option B. Temporary dev mode with `-e`

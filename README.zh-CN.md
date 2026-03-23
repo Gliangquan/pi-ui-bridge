@@ -84,6 +84,7 @@ examples/                可运行示例
 
 ```bash
 cd pi-ui-bridge
+pnpm install
 pnpm install:pi
 ```
 
@@ -99,6 +100,21 @@ pi
 
 ```text
 /pi-ui:start
+```
+
+### 更新已安装版本
+
+从 GitHub 拉取新代码后执行：
+
+```bash
+pnpm install
+pnpm install:pi
+```
+
+### 从 Pi 卸载
+
+```bash
+pnpm uninstall:pi
 ```
 
 ### 方式 B：临时开发模式

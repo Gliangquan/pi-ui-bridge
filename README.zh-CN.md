@@ -80,14 +80,41 @@ examples/                可运行示例
 
 ## 快速开始
 
-### 1. 在项目目录启动 Pi 并加载本地扩展
+### 方式 A：安装到 Pi，全局直接用 `pi`
 
 ```bash
-cd /Users/liangquan/Desktop/server/githubagentwork/repos/pi-ui-bridge
+cd pi-ui-bridge
+pnpm install:pi
+```
+
+这个命令会把当前项目路径写入 `~/.pi/agent/settings.json` 的 `packages`，作为 Pi package source。
+
+之后直接启动：
+
+```bash
+pi
+```
+
+进入 Pi 后执行：
+
+```text
+/ui-start
+```
+
+也可以使用带命名空间的别名：
+
+```text
+/pi-ui:start
+```
+
+### 方式 B：临时开发模式
+
+```bash
+cd pi-ui-bridge
 pi -e ./extensions/pi-ui-bridge/index.ts
 ```
 
-### 2. 在 Pi 中启动 bridge
+### 在 Pi 中启动 bridge
 
 进入 Pi 后执行：
 

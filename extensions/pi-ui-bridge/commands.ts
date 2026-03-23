@@ -24,6 +24,19 @@ function formatStatus(state: BridgeRuntimeState): string {
   return lines.join("\n");
 }
 
+function registerCommandAliases(
+  pi: ExtensionAPI,
+  names: string[],
+  command: {
+    description: string;
+    handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
+  }
+) {
+  for (const name of names) {
+    pi.registerCommand(name, command);
+  }
+}
+
 export function registerBridgeCommands(pi: ExtensionAPI): { state: BridgeRuntimeState } {
   const state = createBridgeRuntimeState();
   let handle: BridgeServerHandle | null = null;
@@ -57,7 +70,7 @@ export function registerBridgeCommands(pi: ExtensionAPI): { state: BridgeRuntime
     return true;
   }
 
-  pi.registerCommand("ui-start", {
+  registerCommandAliases(pi, ["ui-start", "pi-ui:start"], {
     description: "Start Pi UI Bridge localhost server",
     handler: async (_args, ctx) => {
       const current = await ensureStarted(ctx);
@@ -72,7 +85,7 @@ export function registerBridgeCommands(pi: ExtensionAPI): { state: BridgeRuntime
     }
   });
 
-  pi.registerCommand("ui-stop", {
+  registerCommandAliases(pi, ["ui-stop", "pi-ui:stop"], {
     description: "Stop Pi UI Bridge localhost server",
     handler: async (_args, ctx) => {
       const stopped = await stopBridge(ctx);
@@ -85,14 +98,14 @@ export function registerBridgeCommands(pi: ExtensionAPI): { state: BridgeRuntime
     }
   });
 
-  pi.registerCommand("ui-status", {
+  registerCommandAliases(pi, ["ui-status", "pi-ui:status"], {
     description: "Show Pi UI Bridge status",
     handler: async (_args, ctx) => {
       ctx.ui.notify(formatStatus(state), "info");
     }
   });
 
-  pi.registerCommand("ui-last", {
+  registerCommandAliases(pi, ["ui-last", "pi-ui:last"], {
     description: "Re-inject the last browser apply request into the current pi session",
     handler: async (_args, ctx) => {
       const injected = injectLastApplyRequest(pi, state.lastApply, ctx.isIdle());

@@ -68,14 +68,41 @@ After loading the local extension in Pi, these commands are available:
 
 ## Quick start
 
-### 1. Start Pi with the local extension
+### Option A. Install into Pi once, then use plain `pi`
 
 ```bash
-cd /Users/liangquan/Desktop/server/githubagentwork/repos/pi-ui-bridge
+cd pi-ui-bridge
+pnpm install:pi
+```
+
+This writes the current project path into `~/.pi/agent/settings.json` as a Pi package source.
+
+Then just start Pi normally:
+
+```bash
+pi
+```
+
+Inside Pi:
+
+```text
+/ui-start
+```
+
+You can also use the namespaced alias:
+
+```text
+/pi-ui:start
+```
+
+### Option B. Temporary dev mode with `-e`
+
+```bash
+cd pi-ui-bridge
 pi -e ./extensions/pi-ui-bridge/index.ts
 ```
 
-### 2. Start the bridge
+### Start the bridge
 
 Inside Pi:
 

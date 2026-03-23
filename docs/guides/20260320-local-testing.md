@@ -1,9 +1,19 @@
 # 本地联调说明
 
-## 1. 在项目目录启动 pi 并加载本地扩展
+## 1. 启动方式
+
+### 方式 A：注册到 `~/.pi/agent` 后直接启动
 
 ```bash
-cd repos/pi-ui-bridge
+cd pi-ui-bridge
+pnpm install:pi
+pi
+```
+
+### 方式 B：本地临时加载扩展
+
+```bash
+cd pi-ui-bridge
 pi -e ./extensions/pi-ui-bridge/index.ts
 ```
 
@@ -104,7 +114,7 @@ curl -X POST http://127.0.0.1:<port>/apply \
 启动示例项目：
 
 ```bash
-cd repos/pi-ui-bridge
+cd pi-ui-bridge
 pnpm dev:react-demo
 ```
 

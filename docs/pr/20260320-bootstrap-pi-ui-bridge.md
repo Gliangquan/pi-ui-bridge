@@ -22,7 +22,7 @@
 
 ## Rollback Plan
 
-- 删除 `repos/pi-ui-bridge/` 目录
+- 删除 `pi-ui-bridge/` 目录
 - 重新初始化即可
 
 ## Related Issue

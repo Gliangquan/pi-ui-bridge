@@ -24,4 +24,4 @@
 ## Notes
 
 - workhub 通过 bun 执行可正常初始化 docs
-- 当前仓库位于 `repos/pi-ui-bridge`
+- 当前仓库名为 `pi-ui-bridge`

@@ -66,9 +66,27 @@ After loading the local extension in Pi, these commands are available:
 - [Architecture](./docs/architecture/20260320-pi-ui-bridge-v0.1.md)
 - [Project structure guide](./docs/guides/20260320-project-structure.md)
 
+## Built-in skills
+
+This repository includes Pi skills that other agents can load directly:
+
+- `/skill:manage-pi-ui-bridge` — install, update, uninstall in Pi
+- `/skill:setup-pi-ui-bridge` — full setup, browser extension, and local connection flow
+- `/skill:pi-ui-refactor` — handle browser-originated UI-to-code requests
+
 ## Quick start
 
-### Option A. Install into Pi once, then use plain `pi`
+### Option A. Ask Pi to install it via skill
+
+If you are already inside Pi, you can let Pi follow this repository skill:
+
+```text
+/skill:manage-pi-ui-bridge
+```
+
+Then ask Pi to install or uninstall Pi UI Bridge for you.
+
+### Option B. Install into Pi manually, then use plain `pi`
 
 ```bash
 cd pi-ui-bridge

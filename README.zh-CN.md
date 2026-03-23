@@ -78,9 +78,27 @@ examples/                可运行示例
 - [架构设计](./docs/architecture/20260320-pi-ui-bridge-v0.1.md)
 - [项目结构说明](./docs/guides/20260320-project-structure.md)
 
+## 内置 Skill
+
+这个仓库内置了可直接被 Pi 加载的 skill：
+
+- `/skill:manage-pi-ui-bridge` —— 安装、更新、卸载 Pi 侧集成
+- `/skill:setup-pi-ui-bridge` —— 完整初始化、浏览器扩展加载与本地联调
+- `/skill:pi-ui-refactor` —— 处理来自浏览器的 UI-to-code 请求
+
 ## 快速开始
 
-### 方式 A：安装到 Pi，全局直接用 `pi`
+### 方式 A：在 Pi 内通过 Skill 引导安装
+
+如果你已经在 Pi 里，可以直接加载这个仓库自带的 skill：
+
+```text
+/skill:manage-pi-ui-bridge
+```
+
+然后让 Pi 帮你执行安装、更新或卸载。
+
+### 方式 B：手动安装到 Pi，全局直接用 `pi`
 
 ```bash
 cd pi-ui-bridge

@@ -14,9 +14,9 @@ function HeroPanel() {
   );
 }
 
-function FeatureCard(props: { title: string; copy: string }) {
+function FeatureCard(props: { title: string; copy: string; className?: string }) {
   return (
-    <article className="feature-card">
+    <article className={`feature-card ${props.className ?? ""}`.trim()}>
       <h2>{props.title}</h2>
       <p>{props.copy}</p>
       <button className="secondary-btn">发送给 Pi</button>
@@ -30,7 +30,7 @@ export default function App() {
       <HeroPanel />
       <section className="feature-grid">
         <FeatureCard title="页面到源码" copy="点击真实 DOM 节点，读取 sourceHint，直接绑定源码位置。" />
-        <FeatureCard title="结构化请求" copy="不再手工复制 prompt，而是将选择上下文直接发给 pi 会话。" />
+        <FeatureCard className="feature-card--blue" title="结构化请求" copy="不再手工复制 prompt，而是将选择上下文直接发给 pi 会话。" />
         <FeatureCard title="最小修改" copy="基于选中元素的上下文做最小范围修改，而不是盲目全局重构。" />
       </section>
     </main>

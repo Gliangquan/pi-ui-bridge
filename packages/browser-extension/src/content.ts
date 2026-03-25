@@ -4,6 +4,11 @@ import type { BridgeRuntime, ContentSelection, ContentSourceHint, RuntimeRespons
 declare global {
   interface Window {
     __PI_UI_BRIDGE_CONTENT_BOOTED__?: boolean;
+    __PI_UI_BRIDGE_LAST_SELECTION__?: {
+      pageUrl: string;
+      selection: ContentSelection;
+      sourceHint?: ContentSourceHint;
+    };
   }
 }
 
@@ -42,6 +47,8 @@ const COMPOSER_WIDTH = 360;
 const PANEL_MARGIN = 16;
 const CHILD_PREVIEW_COUNT = 6;
 const HOST_ID = "pi-ui-bridge-overlay-host";
+const PANEL_POSITION_STORAGE_KEY = "pi-ui-bridge.panel-position";
+const DIALOG_LIKE_SELECTOR = '[role="dialog"], [aria-modal="true"], dialog, .el-dialog, .ant-modal, .ant-modal-root, .el-overlay, .el-drawer, .van-popup, .MuiModal-root, .MuiDialog-root';
 const TEXT_LIKE_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "SPAN", "STRONG", "EM", "SMALL"]);
 const SELF_STABLE_TAGS = new Set(["BUTTON", "A", "INPUT", "TEXTAREA", "SELECT", "LABEL", "IMG", "VIDEO", "CANVAS"]);
 const LANDMARK_TAGS = new Set(["HEADER", "MAIN", "NAV", "ASIDE", "SECTION", "ARTICLE", "FOOTER", "FORM", "DIALOG"]);
@@ -115,7 +122,8 @@ const STRINGS: Record<Locale, Record<string, string>> = {
     modalTitle: "DOM 视图",
     modalClose: "关闭",
     inlineSend: "发送",
-    inlineOpen: "展开面板"
+    inlineOpen: "展开面板",
+    promptOpen: "直接输入"
   },
   "en-US": {
     title: "Pi UI Bridge",
@@ -172,7 +180,8 @@ const STRINGS: Record<Locale, Record<string, string>> = {
     modalTitle: "DOM View",
     modalClose: "Close",
     inlineSend: "Send",
-    inlineOpen: "Open Panel"
+    inlineOpen: "Open Panel",
+    promptOpen: "Prompt"
   }
 };
 
@@ -248,7 +257,8 @@ const CSS_TEXT = `
   touch-action: none;
 }
 .piui-header:active { cursor: grabbing; }
-.piui-header-actions { display: flex; gap: 8px; align-items: center; }
+.piui-header-drag-zone { flex: 1; min-width: 0; }
+.piui-header-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .piui-eyebrow,
 .piui-section-label,
 .piui-hint {
@@ -367,6 +377,11 @@ const CSS_TEXT = `
   font-size: 12px;
   line-height: 1.5;
   color: #475569;
+}
+.piui-request-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
 }
 .piui-inline {
   position: fixed;
@@ -520,6 +535,30 @@ function getInitialPanelPosition() {
     x: Math.max(PANEL_MARGIN, window.innerWidth - width - PANEL_MARGIN),
     y: PANEL_MARGIN
   };
+}
+
+function loadStoredPanelPosition(): { x: number; y: number } | null {
+  try {
+    const raw = window.localStorage.getItem(PANEL_POSITION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    if (typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+      return null;
+    }
+    return { x: parsed.x, y: parsed.y };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredPanelPosition(x: number, y: number) {
+  try {
+    window.localStorage.setItem(PANEL_POSITION_STORAGE_KEY, JSON.stringify({ x, y }));
+  } catch {
+    // ignore storage failures
+  }
 }
 
 function clampPanelPosition(x: number, y: number, panelWidth: number, panelHeight: number) {
@@ -698,6 +737,18 @@ function sendMessage<T extends RuntimeResponse>(message: object): Promise<T> {
   return chrome.runtime.sendMessage(message);
 }
 
+async function safeSendMessage<T extends RuntimeResponse>(message: object): Promise<T> {
+  try {
+    return await sendMessage<T>(message);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: text.includes("Extension context invalidated") ? "Extension context invalidated. Please reload the extension on this page." : text
+    } as T;
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -784,7 +835,26 @@ function toSelection(element: HTMLElement): ContentSelection {
 }
 
 function isInsideUi(event: Event): boolean {
-  return event.composedPath().some((node) => node instanceof HTMLElement && node.dataset.piUiBridgeUi === "true");
+  const inPath = event.composedPath().some((node) => {
+    if (node instanceof HTMLElement) {
+      return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID;
+    }
+    if (node instanceof ShadowRoot) {
+      return node.host instanceof HTMLElement && (node.host.dataset.piUiBridgeUi === "true" || node.host.id === HOST_ID);
+    }
+    return false;
+  });
+
+  if (inPath) {
+    return true;
+  }
+
+  if (!("clientX" in event) || !("clientY" in event) || typeof event.clientX !== "number" || typeof event.clientY !== "number") {
+    return false;
+  }
+
+  const elements = document.elementsFromPoint(event.clientX, event.clientY);
+  return elements.some((node) => node instanceof HTMLElement && (node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID || node.closest(`#${HOST_ID}`) !== null));
 }
 
 function getElementLabel(element: HTMLElement): string {
@@ -842,6 +912,26 @@ function closeTransientUi(state: PanelState) {
   state.domModalOpen = false;
   state.composerOpen = false;
   state.childrenExpanded = false;
+}
+
+function clearSelectionState(state: PanelState) {
+  state.selectedElement = null;
+  state.hoveredElement = null;
+  state.selectedSelection = null;
+  state.selectedSourceHint = undefined;
+  state.promptDraft = "";
+  closeTransientUi(state);
+}
+
+function isDialogLikeElement(element: HTMLElement | null): boolean {
+  if (!element) {
+    return false;
+  }
+  return Boolean(element.closest(DIALOG_LIKE_SELECTOR));
+}
+
+function isTextInputElement(element: EventTarget | null): boolean {
+  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
 }
 
 function buildDomExplorerMarkup(state: PanelState): string {
@@ -934,6 +1024,10 @@ async function boot() {
   }
 
   const initialPosition = getInitialPanelPosition();
+  const storedPanelPosition = loadStoredPanelPosition();
+  const restoredPanelPosition = storedPanelPosition
+    ? clampPanelPosition(storedPanelPosition.x, storedPanelPosition.y, PANEL_WIDTH, 320)
+    : initialPosition;
   const state: PanelState = {
     collapsed: false,
     selecting: true,
@@ -947,8 +1041,8 @@ async function boot() {
     hoveredElement: null,
     selectedSelection: null,
     selectedSourceHint: undefined,
-    panelX: initialPosition.x,
-    panelY: initialPosition.y,
+    panelX: restoredPanelPosition.x,
+    panelY: restoredPanelPosition.y,
     modalX: Math.max(PANEL_MARGIN, window.innerWidth / 2 - 280),
     modalY: Math.max(PANEL_MARGIN, window.innerHeight / 2 - 260),
     locale: getInitialLocale()
@@ -958,6 +1052,7 @@ async function boot() {
 
   const host = document.createElement("div");
   host.id = HOST_ID;
+  host.dataset.piUiBridgeUi = "true";
   host.style.position = "fixed";
   host.style.inset = "0";
   host.style.pointerEvents = "none";
@@ -969,6 +1064,7 @@ async function boot() {
 
   const root = document.createElement("div");
   root.className = "piui-root";
+  root.dataset.piUiBridgeUi = "true";
 
   const hoverFrame = document.createElement("div");
   hoverFrame.className = "piui-frame piui-frame--hover";
@@ -1022,7 +1118,7 @@ async function boot() {
 
     panel.innerHTML = `
       <div class="piui-header" data-pi-ui-bridge-ui="true">
-        <div data-pi-ui-bridge-ui="true">
+        <div class="piui-header-drag-zone" data-pi-ui-bridge-ui="true">
           <p class="piui-eyebrow">${escapeHtml(t(state, "title"))}</p>
           <h2 class="piui-title">${escapeHtml(t(state, "subtitle"))}</h2>
           <p class="piui-subtitle">${escapeHtml(state.statusText)}</p>
@@ -1030,6 +1126,7 @@ async function boot() {
         <div class="piui-header-actions" data-pi-ui-bridge-ui="true">
           <button id="piuiToggleLocale" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "locale"))}</button>
           <button id="piuiToggleCollapse" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(state.collapsed ? t(state, "expand") : t(state, "collapse"))}</button>
+          <button id="piuiClosePanel" class="piui-toggle" aria-label="Close panel" data-pi-ui-bridge-ui="true">×</button>
         </div>
       </div>
       ${state.collapsed ? "" : `
@@ -1062,8 +1159,16 @@ async function boot() {
         </div>
         <div class="piui-secondary-actions" data-pi-ui-bridge-ui="true">
           <button id="piuiCopyJson" class="piui-button" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "copyJson"))}</button>
-          <button id="piuiFocusComposer" class="piui-button" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "inlineOpen"))}</button>
         </div>
+        <section data-pi-ui-bridge-ui="true">
+          <p class="piui-section-label">${escapeHtml(t(state, "request"))}</p>
+          <div class="piui-card">
+            <textarea id="piuiPanelPrompt" class="piui-textarea" data-pi-ui-bridge-ui="true" placeholder="${escapeHtml(t(state, "promptPlaceholder"))}">${escapeHtml(state.promptDraft)}</textarea>
+            <div class="piui-request-actions" data-pi-ui-bridge-ui="true">
+              <button id="piuiPanelSend" class="piui-button--primary" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "send"))}</button>
+            </div>
+          </div>
+        </section>
         <div class="piui-status" data-pi-ui-bridge-ui="true">${escapeHtml(state.statusText)}</div>
       </div>`}
     `;
@@ -1073,11 +1178,13 @@ async function boot() {
     const toggleCollapseButton = panel.querySelector<HTMLButtonElement>("#piuiToggleCollapse");
     const toggleSelectButton = panel.querySelector<HTMLButtonElement>("#piuiToggleSelect");
     const refreshButton = panel.querySelector<HTMLButtonElement>("#piuiRefresh");
+    const closePanelButton = panel.querySelector<HTMLButtonElement>("#piuiClosePanel");
     const openDomButton = panel.querySelector<HTMLButtonElement>("#piuiOpenDom");
     const locateSourceButton = panel.querySelector<HTMLButtonElement>("#piuiLocateSource");
     const copySourceButton = panel.querySelector<HTMLButtonElement>("#piuiCopySource");
     const copyJsonButton = panel.querySelector<HTMLButtonElement>("#piuiCopyJson");
-    const focusComposerButton = panel.querySelector<HTMLButtonElement>("#piuiFocusComposer");
+    const panelPrompt = panel.querySelector<HTMLTextAreaElement>("#piuiPanelPrompt");
+    const panelSendButton = panel.querySelector<HTMLButtonElement>("#piuiPanelSend");
 
     if (header) {
       header.onpointerdown = (event) => {
@@ -1096,10 +1203,12 @@ async function boot() {
       state.selecting = !state.selecting;
       state.statusText = state.selecting ? t(state, "selectingEnabled") : t(state, "selectingDisabled");
       if (!state.selecting) {
-        state.hoveredElement = null;
-        closeTransientUi(state);
+        clearSelectionState(state);
       }
       renderAll();
+    });
+    closePanelButton?.addEventListener("click", () => {
+      destroyOverlay();
     });
     refreshButton?.addEventListener("click", () => { void loadRuntime(); });
     openDomButton?.addEventListener("click", () => {
@@ -1138,14 +1247,56 @@ async function boot() {
       state.statusText = t(state, "copiedJson");
       renderAll();
     });
-    focusComposerButton?.addEventListener("click", () => {
-      if (!state.selectedElement || !state.selecting) {
+    panelPrompt?.addEventListener("input", () => {
+      state.promptDraft = panelPrompt.value;
+    });
+    panelPrompt?.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+    panelPrompt?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+    panelPrompt?.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+    });
+    panelPrompt?.addEventListener("focusin", (event) => {
+      event.stopPropagation();
+    });
+    panelSendButton?.addEventListener("click", async () => {
+      if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
+        state.statusText = t(state, "notConnected");
+        renderAll();
+        return;
+      }
+      if (!state.selectedSelection || !state.selectedElement) {
         state.statusText = t(state, "noElement");
         renderAll();
         return;
       }
-      state.collapsed = false;
-      state.composerOpen = true;
+      const promptText = (panelPrompt?.value || state.promptDraft).trim();
+      if (!promptText) {
+        state.statusText = t(state, "noPrompt");
+        renderAll();
+        return;
+      }
+      state.statusText = t(state, "sending");
+      renderAll();
+      const response = await safeSendMessage<RuntimeResponse>({
+        type: MESSAGE_TYPES.contentApply,
+        pageUrl: window.location.href,
+        selection: state.selectedSelection,
+        sourceHint: state.selectedSourceHint,
+        prompt: promptText
+      });
+      if (!response.ok) {
+        state.statusText = response.error || "Apply failed";
+        renderAll();
+        return;
+      }
+      state.promptDraft = "";
+      state.statusText = `${t(state, "sentPrefix")}: ${response.requestId}`;
       renderAll();
     });
   }
@@ -1175,14 +1326,23 @@ async function boot() {
     const prompt = inlineComposer.querySelector<HTMLTextAreaElement>("#piuiInlinePrompt");
     const sendButton = inlineComposer.querySelector<HTMLButtonElement>("#piuiInlineSend");
     const domButton = inlineComposer.querySelector<HTMLButtonElement>("#piuiInlineDom");
+    window.requestAnimationFrame(() => {
+      prompt?.focus();
+      prompt?.setSelectionRange(prompt.value.length, prompt.value.length);
+    });
     prompt?.addEventListener("input", () => { state.promptDraft = prompt.value; });
     prompt?.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
+      event.stopImmediatePropagation();
     });
     prompt?.addEventListener("click", (event) => {
       event.stopPropagation();
+      event.stopImmediatePropagation();
     });
     prompt?.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+    });
+    prompt?.addEventListener("focusin", (event) => {
       event.stopPropagation();
     });
     domButton?.addEventListener("click", () => {
@@ -1208,7 +1368,7 @@ async function boot() {
       }
       state.statusText = t(state, "sending");
       renderAll();
-      const response = await sendMessage<RuntimeResponse>({
+      const response = await safeSendMessage<RuntimeResponse>({
         type: MESSAGE_TYPES.contentApply,
         pageUrl: window.location.href,
         selection: state.selectedSelection,
@@ -1271,6 +1431,7 @@ async function boot() {
           renderAll();
           return;
         }
+        state.domModalOpen = false;
         selectElement(target, false);
       });
     });
@@ -1312,14 +1473,19 @@ async function boot() {
     state.selectedElement = promoted;
     state.selectedSelection = toSelection(promoted);
     state.selectedSourceHint = getSourceHint(promoted);
-    state.hoveredElement = promoted;
+    state.hoveredElement = null;
     state.childrenExpanded = false;
-    state.composerOpen = true;
+    state.composerOpen = false;
     state.statusText = t(state, "selectedRecorded");
+    window.__PI_UI_BRIDGE_LAST_SELECTION__ = {
+      pageUrl: window.location.href,
+      selection: state.selectedSelection,
+      sourceHint: state.selectedSourceHint
+    };
     renderAll();
 
     if (syncRemote && state.runtime?.config.bridgeUrl && state.runtime.browserSessionId) {
-      void sendMessage<RuntimeResponse>({
+      void safeSendMessage<RuntimeResponse>({
         type: MESSAGE_TYPES.contentSelectionSync,
         pageUrl: window.location.href,
         selection: state.selectedSelection,
@@ -1329,7 +1495,7 @@ async function boot() {
   }
 
   async function loadRuntime() {
-    const response = await sendMessage<RuntimeResponse>({
+    const response = await safeSendMessage<RuntimeResponse>({
       type: MESSAGE_TYPES.contentGetBridgeRuntime
     });
 
@@ -1360,56 +1526,54 @@ async function boot() {
     syncFrames();
   }
 
-  modalMask.addEventListener("click", () => {
+  const handleModalMaskClick = () => {
     state.domModalOpen = false;
     renderAll();
-  });
+  };
 
-  document.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (isInsideUi(event)) {
-        event.stopPropagation();
-      }
-    },
-    true
-  );
+  const handleRootPointerDown = (event: PointerEvent) => {
+    console.log('[handleRootPointerDown]', 'event.target:', event.target, 'isInsideUi:', isInsideUi(event));
+    if (isInsideUi(event)) {
+      console.log('[handleRootPointerDown] 在 UI 内部，不阻止传播');
+      return;
+    }
+    console.log('[handleRootPointerDown] 在 UI 外部，阻止传播');
+    event.stopPropagation();
+  };
 
-  document.addEventListener(
-    "mousemove",
-    (event) => {
-      if (isInsideUi(event)) {
-        state.hoveredElement = null;
-        syncFrames();
-        return;
-      }
-      handleHover(event.target);
-    },
-    true
-  );
+  const handleDocumentMouseMove = (event: MouseEvent) => {
+    if (isInsideUi(event)) {
+      state.hoveredElement = null;
+      syncFrames();
+      return;
+    }
+    handleHover(event.target);
+  };
 
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (isInsideUi(event)) {
-        return;
-      }
-      if (!state.selecting) {
-        return;
-      }
-      const target = toHTMLElement(event.target);
-      if (!target) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      selectElement(target, true);
-    },
-    true
-  );
+  const handleDocumentClick = (event: MouseEvent) => {
+    if (isInsideUi(event)) {
+      return;
+    }
+    if (!state.selecting) {
+      return;
+    }
+    const target = toHTMLElement(event.target);
+    if (!target) {
+      return;
+    }
+    if (isTextInputElement(event.target)) {
+      return;
+    }
+    if (isDialogLikeElement(target)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    selectElement(target, true);
+  };
 
-  window.addEventListener("pointermove", (event) => {
+  const handleWindowPointerMove = (event: PointerEvent) => {
     if (!dragState) {
       return;
     }
@@ -1438,13 +1602,16 @@ async function boot() {
     state.modalY = next.y;
     modal.style.left = `${state.modalX}px`;
     modal.style.top = `${state.modalY}px`;
-  });
+  };
 
-  window.addEventListener("pointerup", () => {
+  const handleWindowPointerUp = () => {
+    if (dragState?.target === "panel") {
+      saveStoredPanelPosition(state.panelX, state.panelY);
+    }
     dragState = null;
-  });
+  };
 
-  window.addEventListener("resize", () => {
+  const handleWindowResize = () => {
     const nextPanel = clampPanelPosition(state.panelX, state.panelY, panel.offsetWidth || PANEL_WIDTH, panel.offsetHeight || 320);
     state.panelX = nextPanel.x;
     state.panelY = nextPanel.y;
@@ -1452,14 +1619,37 @@ async function boot() {
     state.modalX = nextModal.x;
     state.modalY = nextModal.y;
     renderAll();
-  });
+  };
 
-  window.addEventListener("scroll", () => {
+  const handleWindowScroll = () => {
     renderInlineComposer();
     syncFrames();
-  }, true);
+  };
 
-  document.body.appendChild(host);
+  function destroyOverlay() {
+    dragState = null;
+    clearSelectionState(state);
+    modalMask.removeEventListener("click", handleModalMaskClick);
+    document.removeEventListener("pointerdown", handleRootPointerDown, true);
+    document.removeEventListener("mousemove", handleDocumentMouseMove, true);
+    document.removeEventListener("click", handleDocumentClick, true);
+    window.removeEventListener("pointermove", handleWindowPointerMove);
+    window.removeEventListener("pointerup", handleWindowPointerUp);
+    window.removeEventListener("resize", handleWindowResize);
+    window.removeEventListener("scroll", handleWindowScroll, true);
+    host.remove();
+    window.__PI_UI_BRIDGE_CONTENT_BOOTED__ = false;
+  }
+
+  modalMask.addEventListener("click", handleModalMaskClick);
+  document.addEventListener("pointerdown", handleRootPointerDown, true);
+  document.addEventListener("mousemove", handleDocumentMouseMove, true);
+  document.addEventListener("click", handleDocumentClick, true);
+  window.addEventListener("pointermove", handleWindowPointerMove);
+  window.addEventListener("pointerup", handleWindowPointerUp);
+  window.addEventListener("resize", handleWindowResize);
+  window.addEventListener("scroll", handleWindowScroll, true);
+
   await loadRuntime();
 }
 

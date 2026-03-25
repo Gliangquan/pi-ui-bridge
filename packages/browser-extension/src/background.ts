@@ -193,6 +193,19 @@ async function applyToBridge(
   };
 }
 
+async function getCurrentSelectionFromTab(tabId: number): Promise<{ pageUrl: string; selection: ContentSelection; sourceHint?: ContentSourceHint } | null> {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const runtime = window as typeof window & {
+        __PI_UI_BRIDGE_LAST_SELECTION__?: { pageUrl: string; selection: ContentSelection; sourceHint?: ContentSourceHint };
+      };
+      return runtime.__PI_UI_BRIDGE_LAST_SELECTION__ || null;
+    }
+  });
+  return (result?.result as { pageUrl: string; selection: ContentSelection; sourceHint?: ContentSourceHint } | null) ?? null;
+}
+
 async function handleMessage(message: RuntimeRequest): Promise<RuntimeResponse> {
   switch (message.type) {
     case MESSAGE_TYPES.popupGetBridgeConfig: {
@@ -215,6 +228,16 @@ async function handleMessage(message: RuntimeRequest): Promise<RuntimeResponse> 
       };
     case MESSAGE_TYPES.popupAttachBridge:
       return attachBridge(message.tabId, message.pageUrl, message.pageTitle);
+    case MESSAGE_TYPES.popupApplyCurrentSelection: {
+      const current = await getCurrentSelectionFromTab(message.tabId);
+      if (!current?.selection) {
+        return {
+          ok: false,
+          error: "No current selection found on this page. Select an element first."
+        };
+      }
+      return applyToBridge(current.pageUrl, current.selection, message.prompt, current.sourceHint);
+    }
     case MESSAGE_TYPES.contentGetBridgeRuntime:
       return {
         ok: true,

@@ -2,6 +2,7 @@ export const MESSAGE_TYPES = {
   popupSaveBridgeConfig: "piui/popup/save-bridge-config",
   popupGetBridgeConfig: "piui/popup/get-bridge-config",
   popupAttachBridge: "piui/popup/attach-bridge",
+  popupApplyCurrentSelection: "piui/popup/apply-current-selection",
   contentGetBridgeRuntime: "piui/content/get-bridge-runtime",
   contentSelectionSync: "piui/content/selection-sync",
   contentApply: "piui/content/apply"
@@ -56,6 +57,12 @@ export type PopupAttachBridgeRequest = {
   pageTitle?: string;
 };
 
+export type PopupApplyCurrentSelectionRequest = {
+  type: typeof MESSAGE_TYPES.popupApplyCurrentSelection;
+  tabId: number;
+  prompt: string;
+};
+
 export type ContentGetBridgeRuntimeRequest = {
   type: typeof MESSAGE_TYPES.contentGetBridgeRuntime;
 };
@@ -79,6 +86,7 @@ export type RuntimeRequest =
   | PopupSaveBridgeConfigRequest
   | PopupGetBridgeConfigRequest
   | PopupAttachBridgeRequest
+  | PopupApplyCurrentSelectionRequest
   | ContentGetBridgeRuntimeRequest
   | ContentSelectionSyncRequest
   | ContentApplyRequest;

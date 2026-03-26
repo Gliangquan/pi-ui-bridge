@@ -855,6 +855,10 @@ function toSelection(element: HTMLElement): ContentSelection {
 function isInsideUi(event: Event): boolean {
   const inPath = event.composedPath().some((node) => {
     if (node instanceof HTMLElement) {
+      // 排除 modal mask，允许在 mask 上选择元素
+      if (node.className === "piui-modal-mask") {
+        return false;
+      }
       return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID;
     }
     if (node instanceof ShadowRoot) {
@@ -872,7 +876,16 @@ function isInsideUi(event: Event): boolean {
   }
 
   const elements = document.elementsFromPoint(event.clientX, event.clientY);
-  return elements.some((node) => node instanceof HTMLElement && (node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID || node.closest(`#${HOST_ID}`) !== null));
+  return elements.some((node) => {
+    if (node instanceof HTMLElement) {
+      // 排除 modal mask
+      if (node.className === "piui-modal-mask") {
+        return false;
+      }
+      return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID || node.closest(`#${HOST_ID}`) !== null;
+    }
+    return false;
+  });
 }
 
 function getElementLabel(element: HTMLElement): string {

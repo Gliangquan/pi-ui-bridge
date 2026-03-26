@@ -1656,12 +1656,14 @@ async function boot() {
     
     // 检查是否在 UI 内部
     if (isInsideUi(event)) {
+      console.log("[Pi UI Bridge] Mouse move: inside UI, skipping");
       return;
     }
     
     // 在捕获阶段处理 hover，确保即使有弹窗也能工作
     const element = toHTMLElement(event.target);
     if (element) {
+      console.log("[Pi UI Bridge] Mouse move capture: hovering element", element.tagName);
       state.hoveredElement = resolvePreferredSelectionTarget(element);
       syncFrames();
     }

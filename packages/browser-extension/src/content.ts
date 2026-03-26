@@ -278,6 +278,24 @@ const CSS_TEXT = `
   font-size: 12px;
   line-height: 1.5;
   color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.piui-status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ef4444;
+}
+.piui-status-indicator.connected {
+  background-color: #22c55e;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 .piui-toggle,
 .piui-button,
@@ -1138,9 +1156,13 @@ async function boot() {
         <div class="piui-header-drag-zone" data-pi-ui-bridge-ui="true">
           <p class="piui-eyebrow">${escapeHtml(t(state, "title"))}</p>
           <h2 class="piui-title">${escapeHtml(t(state, "subtitle"))}</h2>
-          <p class="piui-subtitle">${escapeHtml(state.statusText)}</p>
+          <p class="piui-subtitle">
+            <span class="piui-status-indicator ${state.runtime?.browserSessionId ? "connected" : "disconnected"}" data-pi-ui-bridge-ui="true"></span>
+            ${escapeHtml(state.statusText)}
+          </p>
         </div>
         <div class="piui-header-actions" data-pi-ui-bridge-ui="true">
+          ${state.runtime?.browserSessionId ? `<button id="piuiDisconnect" class="piui-toggle" data-pi-ui-bridge-ui="true">断开</button>` : ""}
           <button id="piuiToggleLocale" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "locale"))}</button>
           <button id="piuiToggleCollapse" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(state.collapsed ? t(state, "expand") : t(state, "collapse"))}</button>
           <button id="piuiClosePanel" class="piui-toggle" aria-label="Close panel" data-pi-ui-bridge-ui="true">×</button>
@@ -1227,6 +1249,34 @@ async function boot() {
     closePanelButton?.addEventListener("click", () => {
       destroyOverlay();
     });
+    
+    // 断开连接按钮
+    const disconnectButton = panel.querySelector<HTMLButtonElement>("#piuiDisconnect");
+    disconnectButton?.addEventListener("click", async () => {
+      if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
+        return;
+      }
+      try {
+        // 调用 API 断开连接
+        const response = await fetch(`${state.runtime.config.bridgeUrl}/api/browser-session/${state.runtime.browserSessionId}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            ...(state.runtime.config.authHeader ? { "Authorization": `Bearer ${state.runtime.config.token || ""}` } : {}),
+          },
+        });
+        if (response.ok) {
+          state.runtime = null;
+          state.statusText = t(state, "waiting");
+          renderAll();
+        }
+      } catch (error) {
+        console.error("[Pi UI Bridge] Disconnect error:", error);
+        state.statusText = "断开连接失败";
+        renderAll();
+      }
+    });
+    
     refreshButton?.addEventListener("click", () => { void loadRuntime(); });
     openDomButton?.addEventListener("click", () => {
       if (!state.selectedElement || !state.selecting) {
@@ -1507,7 +1557,7 @@ async function boot() {
     state.selectedSourceHint = getSourceHint(promoted);
     state.hoveredElement = null;
     state.childrenExpanded = false;
-    state.composerOpen = false;
+    state.composerOpen = true;  // 自动打开 inline composer
     state.statusText = t(state, "selectedRecorded");
     window.__PI_UI_BRIDGE_LAST_SELECTION__ = {
       pageUrl: window.location.href,
@@ -1583,6 +1633,25 @@ async function boot() {
       return;
     }
     handleHover(event.target);
+  };
+
+  // 关键修复：在捕获阶段处理鼠标事件，即使有弹窗也能选择元素
+  const handleDocumentMouseMoveCapture = (event: MouseEvent) => {
+    if (!state.selecting) {
+      return;
+    }
+    
+    // 检查是否在 UI 内部
+    if (isInsideUi(event)) {
+      return;
+    }
+    
+    // 在捕获阶段处理 hover，确保即使有弹窗也能工作
+    const element = toHTMLElement(event.target);
+    if (element) {
+      state.hoveredElement = resolvePreferredSelectionTarget(element);
+      syncFrames();
+    }
   };
 
   const handleDocumentClick = (event: MouseEvent) => {
@@ -1704,6 +1773,7 @@ async function boot() {
   
   document.addEventListener("pointerdown", handleRootPointerDown, true);
   document.addEventListener("mousemove", handleDocumentMouseMove, true);
+  document.addEventListener("mousemove", handleDocumentMouseMoveCapture, true);  // 捕获阶段处理
   document.addEventListener("click", handleDocumentClick, true);
   window.addEventListener("pointermove", handleWindowPointerMove);
   window.addEventListener("pointerup", handleWindowPointerUp);

@@ -186,7 +186,6 @@ const STRINGS: Record<Locale, Record<string, string>> = {
 };
 
 const CSS_TEXT = `
-:host { all: initial; }
 .piui-root {
   position: fixed;
   inset: 0;
@@ -414,6 +413,7 @@ const CSS_TEXT = `
   font-size: 13px;
   line-height: 1.6;
   resize: vertical;
+  pointer-events: auto;
 }
 .piui-modal-mask {
   position: fixed;
@@ -1017,6 +1017,7 @@ async function boot() {
     return;
   }
   window.__PI_UI_BRIDGE_CONTENT_BOOTED__ = true;
+  console.log("[Pi UI Bridge] Content script booted, using DOM mode (no Shadow DOM)");
 
   const existingHost = document.getElementById(HOST_ID);
   if (existingHost) {
@@ -1057,10 +1058,11 @@ async function boot() {
   host.style.inset = "0";
   host.style.pointerEvents = "none";
   host.style.zIndex = "2147483647";
+  host.tabIndex = -1;
 
-  const shadowRoot = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = CSS_TEXT;
+  style.id = "pi-ui-bridge-styles";
 
   const root = document.createElement("div");
   root.className = "piui-root";
@@ -1105,16 +1107,31 @@ async function boot() {
   root.appendChild(inlineComposer);
   root.appendChild(modalMask);
   root.appendChild(modal);
-  shadowRoot.append(style, root);
+  host.appendChild(style);
+  host.appendChild(root);
   document.documentElement.appendChild(host);
 
+  // 定义 getActiveDialogRoot 函数
+  function getActiveDialogRoot(): HTMLElement | null {
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>(DIALOG_LIKE_SELECTOR));
+    if (candidates.length === 0) {
+      return null;
+    }
+    
+    // 返回最后一个（最顶层的）弹窗
+    return candidates[candidates.length - 1] ?? null;
+  }
+
   function renderPanel() {
+    console.log("[Pi UI Bridge] renderPanel called, collapsed:", state.collapsed);
     const sourceText = state.selectedSourceHint?.file || state.selectedSourceHint?.sourceId
       ? `${state.selectedSourceHint.file || state.selectedSourceHint.sourceId}${state.selectedSourceHint.line ? `:${state.selectedSourceHint.line}` : ""}`
       : t(state, "noSource");
 
     panel.style.left = `${state.panelX}px`;
     panel.style.top = `${state.panelY}px`;
+    panel.style.display = "flex";
+    console.log("[Pi UI Bridge] Panel display set to flex, position:", state.panelX, state.panelY);
 
     panel.innerHTML = `
       <div class="piui-header" data-pi-ui-bridge-ui="true">
@@ -1248,20 +1265,32 @@ async function boot() {
       renderAll();
     });
     panelPrompt?.addEventListener("input", () => {
+      console.log("[Pi UI Bridge] Input event, value:", panelPrompt.value);
       state.promptDraft = panelPrompt.value;
     });
     panelPrompt?.addEventListener("pointerdown", (event) => {
+      console.log("[Pi UI Bridge] Pointerdown on textarea");
+      // 关键：强制设置焦点，绕过弹窗的焦点陷阱
+      panelPrompt?.focus();
+      // 设置光标到末尾
+      if (panelPrompt) {
+        panelPrompt.setSelectionRange(panelPrompt.value.length, panelPrompt.value.length);
+      }
+      console.log("[Pi UI Bridge] Textarea focused and cursor positioned");
       event.stopPropagation();
       event.stopImmediatePropagation();
-    });
+    }, true);
     panelPrompt?.addEventListener("click", (event) => {
+      console.log("[Pi UI Bridge] Click on textarea");
       event.stopPropagation();
       event.stopImmediatePropagation();
     });
     panelPrompt?.addEventListener("keydown", (event) => {
+      console.log("[Pi UI Bridge] Keydown on textarea:", event.key);
       event.stopPropagation();
     });
     panelPrompt?.addEventListener("focusin", (event) => {
+      console.log("[Pi UI Bridge] Focusin on textarea");
       event.stopPropagation();
     });
     panelSendButton?.addEventListener("click", async () => {
@@ -1332,9 +1361,11 @@ async function boot() {
     });
     prompt?.addEventListener("input", () => { state.promptDraft = prompt.value; });
     prompt?.addEventListener("pointerdown", (event) => {
+      // 关键：强制设置焦点，绕过弹窗的焦点陷阱
+      prompt?.focus();
       event.stopPropagation();
       event.stopImmediatePropagation();
-    });
+    }, true);
     prompt?.addEventListener("click", (event) => {
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -1438,6 +1469,7 @@ async function boot() {
   }
 
   function renderAll() {
+    console.log("[Pi UI Bridge] renderAll called");
     renderPanel();
     renderInlineComposer();
     renderDomModal();
@@ -1495,16 +1527,19 @@ async function boot() {
   }
 
   async function loadRuntime() {
+    console.log("[Pi UI Bridge] loadRuntime called");
     const response = await safeSendMessage<RuntimeResponse>({
       type: MESSAGE_TYPES.contentGetBridgeRuntime
     });
 
     state.runtime = response.runtime ?? null;
+    console.log("[Pi UI Bridge] Runtime loaded:", state.runtime);
     if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
       state.statusText = t(state, "notConnected");
     } else {
       state.statusText = `${t(state, "connectedPrefix")}: ${state.runtime.browserSessionId}`;
     }
+    console.log("[Pi UI Bridge] Status text set to:", state.statusText);
     renderAll();
   }
 
@@ -1642,6 +1677,31 @@ async function boot() {
   }
 
   modalMask.addEventListener("click", handleModalMaskClick);
+  
+  // 关键修复：全局焦点管理器，防止弹窗的焦点陷阱
+  document.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLTextAreaElement && target.id === "piuiPanelPrompt") {
+      console.log("[Pi UI Bridge] Global focusin: textarea focused");
+      event.stopPropagation();
+    }
+  }, true);
+  
+  // 防止焦点离开 textarea
+  document.addEventListener("focusout", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLTextAreaElement && target.id === "piuiPanelPrompt") {
+      const activeDialog = getActiveDialogRoot();
+      if (activeDialog) {
+        console.log("[Pi UI Bridge] Global focusout: preventing focus loss from textarea");
+        event.preventDefault();
+        event.stopPropagation();
+        // 立即重新设置焦点
+        target.focus();
+      }
+    }
+  }, true);
+  
   document.addEventListener("pointerdown", handleRootPointerDown, true);
   document.addEventListener("mousemove", handleDocumentMouseMove, true);
   document.addEventListener("click", handleDocumentClick, true);
@@ -1651,6 +1711,19 @@ async function boot() {
   window.addEventListener("scroll", handleWindowScroll, true);
 
   await loadRuntime();
+  
+  // 测试：验证输入框是否能接收事件
+  setTimeout(() => {
+    const textarea = document.querySelector('[data-pi-ui-bridge-ui="true"] textarea');
+    if (textarea) {
+      console.log("[Pi UI Bridge] Textarea found:", textarea);
+      console.log("[Pi UI Bridge] Textarea pointer-events:", window.getComputedStyle(textarea).pointerEvents);
+      console.log("[Pi UI Bridge] Textarea disabled:", (textarea as HTMLTextAreaElement).disabled);
+      console.log("[Pi UI Bridge] Textarea readonly:", (textarea as HTMLTextAreaElement).readOnly);
+    } else {
+      console.log("[Pi UI Bridge] Textarea NOT found!");
+    }
+  }, 1000);
 }
 
 void boot();

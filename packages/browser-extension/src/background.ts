@@ -12,6 +12,7 @@ import type {
 const CONFIG_KEY = "piui.bridge.config";
 const SESSION_KEY = "piui.bridge.browser-session-id";
 const PAGE_URL_KEY = "piui.bridge.attached-page-url";
+const TAB_ID_KEY = "piui.bridge.attached-tab-id";
 
 async function getBridgeConfig(): Promise<BridgeConfig> {
   const result = await chrome.storage.local.get(CONFIG_KEY);
@@ -46,10 +47,56 @@ async function saveAttachedPageUrl(pageUrl: string): Promise<void> {
   });
 }
 
+async function getAttachedTabId(): Promise<number | null> {
+  const result = await chrome.storage.local.get(TAB_ID_KEY);
+  const value = result[TAB_ID_KEY] as number | undefined;
+  return typeof value === "number" ? value : null;
+}
+
+async function saveAttachedTabId(tabId: number): Promise<void> {
+  await chrome.storage.local.set({
+    [TAB_ID_KEY]: tabId
+  });
+}
+
 async function getBridgeRuntime(): Promise<BridgeRuntime> {
   return {
     config: await getBridgeConfig(),
     browserSessionId: await getBrowserSessionId()
+  };
+}
+
+async function clearBridgeSession(): Promise<void> {
+  await chrome.storage.local.remove([SESSION_KEY, PAGE_URL_KEY, TAB_ID_KEY]);
+}
+
+async function disconnectBridge(): Promise<RuntimeResponse> {
+  const runtime = await getBridgeRuntime();
+
+  if (runtime.config.bridgeUrl && runtime.config.token && runtime.browserSessionId) {
+    try {
+      await fetch(`${runtime.config.bridgeUrl.replace(/\/$/, "")}/api/browser-session/${encodeURIComponent(runtime.browserSessionId)}`, {
+        method: "DELETE",
+        headers: {
+          "x-pi-ui-token": runtime.config.token
+        }
+      });
+    } catch {
+      // Ignore bridge cleanup failures and still clear local session state.
+    }
+  }
+
+  await clearBridgeSession();
+  return {
+    ok: true,
+    browserSessionId: undefined,
+    connected: false,
+    attachedPageUrl: undefined,
+    attachedTabId: undefined,
+    runtime: {
+      config: runtime.config,
+      browserSessionId: ""
+    }
   };
 }
 
@@ -92,6 +139,7 @@ async function attachBridge(tabId: number, pageUrl: string, pageTitle?: string):
   const data = (await response.json()) as AttachResponse;
   await saveBrowserSessionId(data.browserSessionId);
   await saveAttachedPageUrl(pageUrl);
+  await saveAttachedTabId(tabId);
   await ensureContentScript(tabId);
 
   return {
@@ -102,7 +150,8 @@ async function attachBridge(tabId: number, pageUrl: string, pageTitle?: string):
       browserSessionId: data.browserSessionId
     },
     connected: true,
-    attachedPageUrl: pageUrl
+    attachedPageUrl: pageUrl,
+    attachedTabId: tabId
   };
 }
 
@@ -206,18 +255,28 @@ async function getCurrentSelectionFromTab(tabId: number): Promise<{ pageUrl: str
   return (result?.result as { pageUrl: string; selection: ContentSelection; sourceHint?: ContentSourceHint } | null) ?? null;
 }
 
-async function handleMessage(message: RuntimeRequest): Promise<RuntimeResponse> {
+async function getSenderTabId(sender?: chrome.runtime.MessageSender): Promise<number | undefined> {
+  return sender?.tab?.id;
+}
+
+async function handleMessage(message: RuntimeRequest, sender?: chrome.runtime.MessageSender): Promise<RuntimeResponse> {
+  const senderTabId = await getSenderTabId(sender);
+  const attachedTabId = await getAttachedTabId();
+  const attachedPageUrl = await getAttachedPageUrl();
+
   switch (message.type) {
     case MESSAGE_TYPES.popupGetBridgeConfig: {
       const config = await getBridgeConfig();
       const browserSessionId = await getBrowserSessionId();
       const attachedPageUrl = await getAttachedPageUrl();
+      const attachedTabId = await getAttachedTabId();
       return {
         ok: true,
         config,
         browserSessionId: browserSessionId || undefined,
         connected: Boolean(config.bridgeUrl && config.token && browserSessionId),
-        attachedPageUrl: attachedPageUrl || undefined
+        attachedPageUrl: attachedPageUrl || undefined,
+        attachedTabId: attachedTabId ?? undefined
       };
     }
     case MESSAGE_TYPES.popupSaveBridgeConfig:
@@ -243,12 +302,17 @@ async function handleMessage(message: RuntimeRequest): Promise<RuntimeResponse> 
         ok: true,
         runtime: await getBridgeRuntime(),
         browserSessionId: await getBrowserSessionId(),
-        attachedPageUrl: await getAttachedPageUrl()
+        attachedPageUrl: attachedPageUrl || undefined,
+        attachedTabId: attachedTabId ?? undefined,
+        requestTabId: senderTabId,
+        isCurrentTabAttached: attachedTabId != null && senderTabId != null ? attachedTabId === senderTabId : undefined
       };
     case MESSAGE_TYPES.contentSelectionSync:
       return selectionSync(message.pageUrl, message.selection, message.sourceHint);
     case MESSAGE_TYPES.contentApply:
       return applyToBridge(message.pageUrl, message.selection, message.prompt, message.sourceHint);
+    case MESSAGE_TYPES.contentDisconnectBridge:
+      return disconnectBridge();
     default:
       return {
         ok: false,
@@ -257,8 +321,8 @@ async function handleMessage(message: RuntimeRequest): Promise<RuntimeResponse> 
   }
 }
 
-chrome.runtime.onMessage.addListener((message: RuntimeRequest, _sender, sendResponse) => {
-  void handleMessage(message)
+chrome.runtime.onMessage.addListener((message: RuntimeRequest, sender, sendResponse) => {
+  void handleMessage(message, sender)
     .then((response) => sendResponse(response))
     .catch((error) => {
       sendResponse({

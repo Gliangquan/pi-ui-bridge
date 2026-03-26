@@ -244,6 +244,9 @@ const CSS_TEXT = `
   overflow: hidden;
   border-radius: 20px;
 }
+.piui-panel--collapsed {
+  width: min(348px, calc(100vw - 24px));
+}
 .piui-header {
   display: flex;
   align-items: flex-start;
@@ -255,9 +258,53 @@ const CSS_TEXT = `
   user-select: none;
   touch-action: none;
 }
+.piui-header--collapsed {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: none;
+}
 .piui-header:active { cursor: grabbing; }
 .piui-header-drag-zone { flex: 1; min-width: 0; }
 .piui-header-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.piui-header-actions--compact {
+  width: 100%;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.piui-header-actions--compact::-webkit-scrollbar { display: none; }
+.piui-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+.piui-status-pill .piui-status-indicator {
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+.piui-toggle--mini {
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex: 0 0 auto;
+}
+.piui-toggle--mini.piui-button--chip.is-active {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
 .piui-eyebrow,
 .piui-section-label,
 .piui-hint {
@@ -1162,9 +1209,25 @@ async function boot() {
     panel.style.left = `${state.panelX}px`;
     panel.style.top = `${state.panelY}px`;
     panel.style.display = "flex";
+    panel.className = `piui-panel${state.collapsed ? " piui-panel--collapsed" : ""}`;
     console.log("[Pi UI Bridge] Panel display set to flex, position:", state.panelX, state.panelY);
 
-    panel.innerHTML = `
+    const collapsedHeader = `
+      <div class="piui-header piui-header--collapsed" data-pi-ui-bridge-ui="true">
+        <div class="piui-header-actions piui-header-actions--compact" data-pi-ui-bridge-ui="true">
+          <div class="piui-status-pill" data-pi-ui-bridge-ui="true" aria-label="bridge-status">
+            <span class="piui-status-indicator ${state.runtime?.browserSessionId ? "connected" : "disconnected"}" data-pi-ui-bridge-ui="true"></span>
+          </div>
+          <button id="piuiToggleSelect" class="piui-toggle piui-toggle--mini piui-button--chip ${state.selecting ? "is-active" : ""}" data-pi-ui-bridge-ui="true">${escapeHtml(state.selecting ? "选择:开" : "选择:关")}</button>
+          <button id="piuiRefresh" class="piui-toggle piui-toggle--mini" data-pi-ui-bridge-ui="true">刷新</button>
+          ${state.runtime?.browserSessionId ? `<button id="piuiDisconnect" class="piui-toggle piui-toggle--mini" data-pi-ui-bridge-ui="true">断开</button>` : ""}
+          <button id="piuiToggleCollapse" class="piui-toggle piui-toggle--mini" data-pi-ui-bridge-ui="true">展开</button>
+          <button id="piuiClosePanel" class="piui-toggle piui-toggle--mini" aria-label="Close panel" data-pi-ui-bridge-ui="true">×</button>
+        </div>
+      </div>
+    `;
+
+    panel.innerHTML = state.collapsed ? collapsedHeader : `
       <div class="piui-header" data-pi-ui-bridge-ui="true">
         <div class="piui-header-drag-zone" data-pi-ui-bridge-ui="true">
           <p class="piui-eyebrow">${escapeHtml(t(state, "title"))}</p>
@@ -1177,11 +1240,10 @@ async function boot() {
         <div class="piui-header-actions" data-pi-ui-bridge-ui="true">
           ${state.runtime?.browserSessionId ? `<button id="piuiDisconnect" class="piui-toggle" data-pi-ui-bridge-ui="true">断开</button>` : ""}
           <button id="piuiToggleLocale" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "locale"))}</button>
-          <button id="piuiToggleCollapse" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(state.collapsed ? t(state, "expand") : t(state, "collapse"))}</button>
+          <button id="piuiToggleCollapse" class="piui-toggle" data-pi-ui-bridge-ui="true">${escapeHtml(t(state, "collapse"))}</button>
           <button id="piuiClosePanel" class="piui-toggle" aria-label="Close panel" data-pi-ui-bridge-ui="true">×</button>
         </div>
       </div>
-      ${state.collapsed ? "" : `
       <div class="piui-body" data-pi-ui-bridge-ui="true">
         <div class="piui-toolbar" data-pi-ui-bridge-ui="true">
           <button id="piuiToggleSelect" class="piui-button--chip ${state.selecting ? "is-active" : ""}" data-pi-ui-bridge-ui="true">${escapeHtml(state.selecting ? t(state, "selectOn") : t(state, "selectOff"))}</button>
@@ -1222,7 +1284,7 @@ async function boot() {
           </div>
         </section>
         <div class="piui-status" data-pi-ui-bridge-ui="true">${escapeHtml(state.statusText)}</div>
-      </div>`}
+      </div>
     `;
 
     const header = panel.querySelector<HTMLElement>(".piui-header");
@@ -1266,23 +1328,22 @@ async function boot() {
     // 断开连接按钮
     const disconnectButton = panel.querySelector<HTMLButtonElement>("#piuiDisconnect");
     disconnectButton?.addEventListener("click", async () => {
-      if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
-        return;
-      }
       try {
-        // 调用 API 断开连接
-        const response = await fetch(`${state.runtime.config.bridgeUrl}/api/browser-session/${state.runtime.browserSessionId}`, {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            ...(state.runtime.config.authHeader ? { "Authorization": `Bearer ${state.runtime.config.token || ""}` } : {}),
-          },
+        const response = await safeSendMessage<RuntimeResponse>({
+          type: MESSAGE_TYPES.contentDisconnectBridge
         });
-        if (response.ok) {
-          state.runtime = null;
-          state.statusText = t(state, "waiting");
+        if (!response.ok) {
+          state.statusText = response.error || "断开连接失败";
           renderAll();
+          return;
         }
+        state.runtime = response.runtime ?? {
+          config: state.runtime?.config ?? { bridgeUrl: "", token: "" },
+          browserSessionId: ""
+        };
+        state.statusText = t(state, "waiting");
+        clearSelectionState(state);
+        renderAll();
       } catch (error) {
         console.error("[Pi UI Bridge] Disconnect error:", error);
         state.statusText = "断开连接失败";
@@ -1426,6 +1487,9 @@ async function boot() {
     prompt?.addEventListener("pointerdown", (event) => {
       // 关键：强制设置焦点，绕过弹窗的焦点陷阱
       prompt?.focus();
+      if (prompt) {
+        prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+      }
       event.stopPropagation();
       event.stopImmediatePropagation();
     }, true);
@@ -1595,6 +1659,15 @@ async function boot() {
       type: MESSAGE_TYPES.contentGetBridgeRuntime
     });
 
+    const isAttachedToCurrentTab = response.isCurrentTabAttached ?? (response.attachedTabId == null);
+    const isAttachedToCurrentPage = !response.attachedPageUrl || response.attachedPageUrl === window.location.href;
+    const isCurrentContextActive = isAttachedToCurrentTab && isAttachedToCurrentPage;
+
+    if (!isCurrentContextActive) {
+      destroyOverlay();
+      return;
+    }
+
     state.runtime = response.runtime ?? null;
     console.log("[Pi UI Bridge] Runtime loaded:", state.runtime);
     if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
@@ -1681,9 +1754,6 @@ async function boot() {
       return;
     }
     if (isTextInputElement(event.target)) {
-      return;
-    }
-    if (isDialogLikeElement(target)) {
       return;
     }
     event.preventDefault();
@@ -1775,7 +1845,7 @@ async function boot() {
   // 关键修复：全局焦点管理器，防止弹窗的焦点陷阱
   document.addEventListener("focusin", (event) => {
     const target = event.target;
-    if (target instanceof HTMLTextAreaElement && target.id === "piuiPanelPrompt") {
+    if (target instanceof HTMLTextAreaElement && (target.id === "piuiPanelPrompt" || target.id === "piuiInlinePrompt")) {
       console.log("[Pi UI Bridge] Global focusin: textarea focused");
       event.stopPropagation();
     }
@@ -1784,7 +1854,7 @@ async function boot() {
   // 防止焦点离开 textarea
   document.addEventListener("focusout", (event) => {
     const target = event.target;
-    if (target instanceof HTMLTextAreaElement && target.id === "piuiPanelPrompt") {
+    if (target instanceof HTMLTextAreaElement && (target.id === "piuiPanelPrompt" || target.id === "piuiInlinePrompt")) {
       const activeDialog = getActiveDialogRoot();
       if (activeDialog) {
         console.log("[Pi UI Bridge] Global focusout: preventing focus loss from textarea");

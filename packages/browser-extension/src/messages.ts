@@ -5,7 +5,8 @@ export const MESSAGE_TYPES = {
   popupApplyCurrentSelection: "piui/popup/apply-current-selection",
   contentGetBridgeRuntime: "piui/content/get-bridge-runtime",
   contentSelectionSync: "piui/content/selection-sync",
-  contentApply: "piui/content/apply"
+  contentApply: "piui/content/apply",
+  contentDisconnectBridge: "piui/content/disconnect-bridge"
 } as const;
 
 export type BridgeConfig = {
@@ -82,6 +83,10 @@ export type ContentApplyRequest = {
   prompt: string;
 };
 
+export type ContentDisconnectBridgeRequest = {
+  type: typeof MESSAGE_TYPES.contentDisconnectBridge;
+};
+
 export type RuntimeRequest =
   | PopupSaveBridgeConfigRequest
   | PopupGetBridgeConfigRequest
@@ -89,7 +94,8 @@ export type RuntimeRequest =
   | PopupApplyCurrentSelectionRequest
   | ContentGetBridgeRuntimeRequest
   | ContentSelectionSyncRequest
-  | ContentApplyRequest;
+  | ContentApplyRequest
+  | ContentDisconnectBridgeRequest;
 
 export type RuntimeResponse = {
   ok: boolean;
@@ -100,4 +106,7 @@ export type RuntimeResponse = {
   requestId?: string;
   connected?: boolean;
   attachedPageUrl?: string;
+  attachedTabId?: number;
+  requestTabId?: number;
+  isCurrentTabAttached?: boolean;
 };

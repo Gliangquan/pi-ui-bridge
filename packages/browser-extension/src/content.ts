@@ -186,6 +186,7 @@ const STRINGS: Record<Locale, Record<string, string>> = {
 };
 
 const CSS_TEXT = `
+:host { all: initial; }
 .piui-root {
   position: fixed;
   inset: 0;
@@ -484,7 +485,7 @@ const CSS_TEXT = `
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.24);
-  pointer-events: none;  /* 关键：改为 none，让事件穿过 mask */
+  pointer-events: none;
 }
 .piui-modal {
   position: fixed;
@@ -622,7 +623,7 @@ function saveStoredPanelPosition(x: number, y: number) {
   try {
     window.localStorage.setItem(PANEL_POSITION_STORAGE_KEY, JSON.stringify({ x, y }));
   } catch {
-    // ignore storage failures
+    // ignore localStorage failures
   }
 }
 
@@ -636,114 +637,70 @@ function clampPanelPosition(x: number, y: number, panelWidth: number, panelHeigh
 }
 
 function clampInlinePosition(x: number, y: number, width: number, height: number) {
-  const next = clampPanelPosition(x, y, width, height);
-  return next;
+  return clampPanelPosition(x, y, width, height);
 }
 
-function escapeSelectorFragment(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-
-  return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
-}
-
-function buildClassSignature(element: HTMLElement): string {
-  const classNames = Array.from(element.classList).filter(Boolean).slice(0, 2);
-  return classNames.length > 0 ? `.${classNames.map(escapeSelectorFragment).join(".")}` : "";
-}
-
-function buildNthOfTypeSelector(element: HTMLElement): string {
-  const parent = element.parentElement;
-  if (!parent) {
-    return "";
-  }
-
-  const siblings = Array.from(parent.children).filter((child) => child.tagName === element.tagName);
-  if (siblings.length <= 1) {
-    return "";
-  }
-
-  const index = siblings.indexOf(element) + 1;
-  return index > 0 ? `:nth-of-type(${index})` : "";
-}
-
-function buildSelectorSegment(element: HTMLElement): string {
-  const tag = element.tagName.toLowerCase();
-  if (element.id) {
-    return `${tag}#${escapeSelectorFragment(element.id)}`;
-  }
-
-  const classSignature = buildClassSignature(element);
-  if (classSignature) {
-    return `${tag}${classSignature}`;
-  }
-
-  return `${tag}${buildNthOfTypeSelector(element)}`;
-}
-
-function isLandmarkElement(element: HTMLElement): boolean {
-  if (LANDMARK_TAGS.has(element.tagName)) {
-    return true;
-  }
-
-  return element.hasAttribute("role");
+function getRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
 }
 
 function getTextPreview(element: HTMLElement): string | undefined {
-  const text = element.textContent?.replace(/\s+/g, " ").trim();
-  if (!text) {
-    return undefined;
-  }
-  return text.slice(0, 80);
+  const text = element.innerText || element.textContent || "";
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, 120) : undefined;
 }
 
-function getAttributePreview(element: HTMLElement, name: string): string | undefined {
-  const value = element.getAttribute(name)?.replace(/\s+/g, " ").trim();
-  return value ? value.slice(0, 120) : undefined;
-}
-
-function getTestAttributeHints(element: HTMLElement): string[] {
-  const hints: string[] = [];
+function buildSelectorSegment(element: HTMLElement): string {
+  const parts = [element.tagName.toLowerCase()];
   if (element.id) {
-    hints.push(`id=${element.id}`);
+    parts.push(`#${element.id}`);
   }
-  for (const name of TEST_ATTRIBUTE_NAMES) {
-    const value = getAttributePreview(element, name);
-    if (value) {
-      hints.push(`${name}=${value}`);
-    }
+  if (element.classList.length > 0) {
+    parts.push(
+      Array.from(element.classList)
+        .slice(0, 2)
+        .map((name) => `.${name}`)
+        .join("")
+    );
   }
-  return hints.slice(0, 6);
+  return parts.join("");
 }
 
 function shouldPromoteSelection(element: HTMLElement): boolean {
   if (SELF_STABLE_TAGS.has(element.tagName)) {
     return false;
   }
-
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  const area = rect.width * rect.height;
-
-  return (
-    TEXT_LIKE_TAGS.has(element.tagName) ||
-    style.display === "inline" ||
-    (element.childElementCount === 0 && area < 6400) ||
-    rect.height < 28
-  );
+  if (TEXT_LIKE_TAGS.has(element.tagName) && (element.textContent || "").trim().length < 80) {
+    return true;
+  }
+  return element.childElementCount === 0;
 }
 
 function isReasonablePromotionTarget(current: HTMLElement, candidate: HTMLElement): boolean {
-  if (candidate.tagName === "BODY" || candidate.tagName === "HTML") {
+  if (candidate === document.body || candidate === document.documentElement) {
     return false;
+  }
+  if (candidate.closest(`[data-pi-ui-bridge-ui="true"]`)) {
+    return false;
+  }
+  if (LANDMARK_TAGS.has(candidate.tagName)) {
+    return true;
   }
 
   const currentRect = current.getBoundingClientRect();
   const candidateRect = candidate.getBoundingClientRect();
-  const currentArea = Math.max(1, currentRect.width * currentRect.height);
+  const currentArea = currentRect.width * currentRect.height;
   const candidateArea = candidateRect.width * candidateRect.height;
 
+  if (candidateArea <= 0 || currentArea <= 0) {
+    return false;
+  }
   if (candidateArea > window.innerWidth * window.innerHeight * 0.72) {
     return false;
   }
@@ -834,53 +791,51 @@ function getSelector(element: HTMLElement): string {
 function getDomPath(element: HTMLElement, depth = 5): string {
   const segments: string[] = [];
   let current: HTMLElement | null = element;
+
   while (current && segments.length < depth) {
-    if (current.tagName === "BODY" || current.tagName === "HTML") {
-      break;
-    }
-    segments.unshift(getSelector(current));
-    current = current.parentElement;
+    const parentElement: HTMLElement | null = current.parentElement;
+    const index = parentElement ? Array.from(parentElement.children).indexOf(current) + 1 : 1;
+    segments.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+    current = parentElement;
   }
+
   return segments.join(" > ");
 }
 
-function getSemanticPath(element: HTMLElement, depth = 5): string | undefined {
-  const selectors: string[] = [];
+function getSemanticPath(element: HTMLElement): string {
+  const labels: string[] = [];
   let current: HTMLElement | null = element;
-  while (current && selectors.length < depth) {
-    if (current.tagName === "BODY" || current.tagName === "HTML") {
-      break;
-    }
-    if (isLandmarkElement(current)) {
-      selectors.unshift(getSelector(current));
-    }
+
+  while (current && labels.length < 5) {
+    const label = current.getAttribute("aria-label") || current.getAttribute("data-testid") || current.getAttribute("name") || current.tagName.toLowerCase();
+    labels.unshift(label);
     current = current.parentElement;
   }
-  return selectors.length > 0 ? selectors.join(" > ") : undefined;
+
+  return labels.join(" / ");
 }
 
-function getRect(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-  return {
-    x: Math.round(rect.x),
-    y: Math.round(rect.y),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height)
-  };
+function getTestAttributeHints(element: HTMLElement): string[] {
+  return TEST_ATTRIBUTE_NAMES.flatMap((name) => {
+    const value = element.getAttribute(name);
+    return value ? [`${name}=${value}`] : [];
+  });
 }
 
 function getSourceHint(element: HTMLElement): ContentSourceHint | undefined {
-  const sourceId = getAttributePreview(element, "data-pi-source-id");
-  const file = getAttributePreview(element, "data-pi-source-file");
-  const line = getAttributePreview(element, "data-pi-source-line");
-  const column = getAttributePreview(element, "data-pi-source-column");
-  const component = getAttributePreview(element, "data-pi-component");
-  if (!sourceId && !file && !line && !column && !component) {
+  const file = element.getAttribute("data-source-file") || undefined;
+  const line = element.getAttribute("data-source-line") || undefined;
+  const column = element.getAttribute("data-source-column") || undefined;
+  const sourceId = element.getAttribute("data-source-id") || undefined;
+  const component = element.getAttribute("data-component") || undefined;
+
+  if (!file && !line && !column && !sourceId && !component) {
     return undefined;
   }
+
   return {
-    sourceId,
     file,
+    sourceId,
     line: line ? Number(line) : undefined,
     column: column ? Number(column) : undefined,
     component
@@ -902,14 +857,10 @@ function toSelection(element: HTMLElement): ContentSelection {
 function isInsideUi(event: Event): boolean {
   const inPath = event.composedPath().some((node) => {
     if (node instanceof HTMLElement) {
-      // 排除 modal mask 和 modal，允许在它们上面选择元素
       if (node.className === "piui-modal-mask" || node.className === "piui-modal") {
         return false;
       }
       return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID;
-    }
-    if (node instanceof ShadowRoot) {
-      return node.host instanceof HTMLElement && (node.host.dataset.piUiBridgeUi === "true" || node.host.id === HOST_ID);
     }
     return false;
   });
@@ -925,7 +876,6 @@ function isInsideUi(event: Event): boolean {
   const elements = document.elementsFromPoint(event.clientX, event.clientY);
   return elements.some((node) => {
     if (node instanceof HTMLElement) {
-      // 排除 modal mask 和 modal
       if (node.className === "piui-modal-mask" || node.className === "piui-modal") {
         return false;
       }
@@ -954,36 +904,22 @@ function findElementByDomPath(domPath: string): HTMLElement | null {
     return null;
   }
 
-  const segments = domPath.split(" > ").map((segment) => segment.trim()).filter(Boolean);
-  let current: ParentNode = document;
-  let currentElement: HTMLElement | null = null;
+  const segments = domPath.split(" > ");
+  let current: Element | null = document.documentElement;
 
   for (const segment of segments) {
-    const candidate = current.querySelector(segment);
-    if (!(candidate instanceof HTMLElement)) {
+    const nextElement: Element | null | undefined = current?.querySelector(`:scope > ${segment}`);
+    if (!nextElement) {
       return null;
     }
-    currentElement = candidate;
-    current = candidate;
+    current = nextElement;
   }
 
-  return currentElement;
+  return current instanceof HTMLElement ? current : null;
 }
 
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
+function copyText(text: string): Promise<void> {
+  return navigator.clipboard.writeText(text);
 }
 
 function closeTransientUi(state: PanelState) {
@@ -1036,56 +972,52 @@ function buildDomExplorerMarkup(state: PanelState): string {
         .join("")}</div>`
     : `<div class="piui-empty">${escapeHtml(t(state, "noSource"))}</div>`;
 
-  const currentNode = `<div class="piui-current-node"><strong>${escapeHtml(getElementLabel(state.selectedElement))}</strong><p>${escapeHtml(
-    `${t(state, "selector")}: ${state.selectedSelection?.selector || t(state, "noSource")}`
-  )}</p><p>${escapeHtml(`${t(state, "text")}: ${state.selectedSelection?.text || t(state, "noSource")}`)}</p></div>`;
-
-  const childNodes = visibleChildren.length
-    ? `<div class="piui-children-list">${visibleChildren
+  const treeLines = visibleChildren.length
+    ? visibleChildren
         .map(
           (item) =>
-            `<button class="piui-child-node" data-pi-node-path="${escapeHtml(getDomPath(item, 8))}" data-pi-ui-bridge-ui="true">${escapeHtml(getElementLabel(item))}</button>`
+            `<button class="piui-tree-node${item === state.selectedElement ? " piui-tree-node--selected" : ""}" data-pi-node-path="${escapeHtml(
+              getDomPath(item, 8)
+            )}" data-pi-ui-bridge-ui="true">${escapeHtml(getElementLabel(item))}</button>`
         )
-        .join("")}</div>`
+        .join("")
     : `<div class="piui-empty">${escapeHtml(t(state, "noChildren"))}</div>`;
 
-  const childToggle =
-    children.length > CHILD_PREVIEW_COUNT
-      ? `<button id="piuiToggleChildren" class="piui-button" data-pi-ui-bridge-ui="true">${escapeHtml(
-          state.childrenExpanded ? t(state, "lessChildren") : `${t(state, "moreChildren")} (${children.length})`
-        )}</button>`
-      : "";
-
-  const treeLines = [
-    ...ancestors.map(
-      (item, index) =>
-        `<button class="piui-tree-node" data-pi-node-path="${escapeHtml(getDomPath(item, 8))}" data-pi-ui-bridge-ui="true" style="padding-left:${index * 14}px;">└ ${escapeHtml(getElementLabel(item))}</button>`
-    ),
-    `<button class="piui-tree-node piui-tree-node--selected" data-pi-node-path="${escapeHtml(getDomPath(state.selectedElement, 8))}" data-pi-ui-bridge-ui="true" style="padding-left:${ancestors.length * 14}px;">└ ${escapeHtml(getElementLabel(state.selectedElement))}</button>`,
-    ...visibleChildren.map(
-      (item, index) =>
-        `<button class="piui-tree-node" data-pi-node-path="${escapeHtml(getDomPath(item, 8))}" data-pi-ui-bridge-ui="true" style="padding-left:${(ancestors.length + 1) * 14}px;">${index === visibleChildren.length - 1 ? "└" : "├"} ${escapeHtml(getElementLabel(item))}</button>`
-    )
-  ].join("");
+  const childToggle = children.length > CHILD_PREVIEW_COUNT
+    ? `<button id="piuiToggleChildren" class="piui-button--ghost" data-pi-ui-bridge-ui="true">${escapeHtml(
+        state.childrenExpanded ? t(state, "lessChildren") : t(state, "moreChildren")
+      )}</button>`
+    : "";
 
   return `
-    <div class="piui-card">
+    <div class="piui-modal-body">
       <p class="piui-section-label">${escapeHtml(t(state, "ancestorPath"))}</p>
       ${chips}
-      <div class="piui-tree-meta">${escapeHtml(t(state, "siblingHint"))}</div>
     </div>
-    <div class="piui-card">
+    <div class="piui-modal-body">
       <p class="piui-section-label">${escapeHtml(t(state, "currentNode"))}</p>
-      ${currentNode}
-      <div class="piui-tree-meta">${escapeHtml(`${t(state, "childrenCount")}: ${children.length}`)}</div>
+      <div class="piui-current-node">
+        <strong>${escapeHtml(getElementLabel(state.selectedElement))}</strong>
+        <p>${escapeHtml(`${t(state, "selector")}: ${state.selectedSelection?.selector || t(state, "noSource")}`)}</p>
+        <p>${escapeHtml(`${t(state, "text")}: ${state.selectedSelection?.text || t(state, "noSource")}`)}</p>
+      </div>
     </div>
-    <div class="piui-card">
+    <div class="piui-modal-body">
       <p class="piui-section-label">${escapeHtml(t(state, "childPreview"))}</p>
-      ${childNodes}
+      <div class="piui-children-list">${visibleChildren
+        .map(
+          (item) =>
+            `<button class="piui-child-node" data-pi-node-path="${escapeHtml(getDomPath(item, 8))}" data-pi-ui-bridge-ui="true">${escapeHtml(
+              getElementLabel(item)
+            )}</button>`
+        )
+        .join("") || `<div class="piui-empty">${escapeHtml(t(state, "noChildren"))}</div>`}</div>
       ${childToggle}
     </div>
     <div class="piui-card piui-tree-block">
       ${treeLines}
+      <div class="piui-tree-meta">${escapeHtml(`${t(state, "childrenCount")}: ${children.length}`)}</div>
+      <div class="piui-tree-meta">${escapeHtml(t(state, "siblingHint"))}</div>
     </div>
   `;
 }
@@ -1095,7 +1027,6 @@ async function boot() {
     return;
   }
   window.__PI_UI_BRIDGE_CONTENT_BOOTED__ = true;
-  console.log("[Pi UI Bridge] Content script booted, using DOM mode (no Shadow DOM)");
 
   const existingHost = document.getElementById(HOST_ID);
   if (existingHost) {
@@ -1189,19 +1120,15 @@ async function boot() {
   host.appendChild(root);
   document.documentElement.appendChild(host);
 
-  // 定义 getActiveDialogRoot 函数
   function getActiveDialogRoot(): HTMLElement | null {
     const candidates = Array.from(document.querySelectorAll<HTMLElement>(DIALOG_LIKE_SELECTOR));
     if (candidates.length === 0) {
       return null;
     }
-    
-    // 返回最后一个（最顶层的）弹窗
     return candidates[candidates.length - 1] ?? null;
   }
 
   function renderPanel() {
-    console.log("[Pi UI Bridge] renderPanel called, collapsed:", state.collapsed);
     const sourceText = state.selectedSourceHint?.file || state.selectedSourceHint?.sourceId
       ? `${state.selectedSourceHint.file || state.selectedSourceHint.sourceId}${state.selectedSourceHint.line ? `:${state.selectedSourceHint.line}` : ""}`
       : t(state, "noSource");
@@ -1210,7 +1137,6 @@ async function boot() {
     panel.style.top = `${state.panelY}px`;
     panel.style.display = "flex";
     panel.className = `piui-panel${state.collapsed ? " piui-panel--collapsed" : ""}`;
-    console.log("[Pi UI Bridge] Panel display set to flex, position:", state.panelX, state.panelY);
 
     const collapsedHeader = `
       <div class="piui-header piui-header--collapsed" data-pi-ui-bridge-ui="true">
@@ -1324,8 +1250,7 @@ async function boot() {
     closePanelButton?.addEventListener("click", () => {
       destroyOverlay();
     });
-    
-    // 断开连接按钮
+
     const disconnectButton = panel.querySelector<HTMLButtonElement>("#piuiDisconnect");
     disconnectButton?.addEventListener("click", async () => {
       try {
@@ -1337,20 +1262,14 @@ async function boot() {
           renderAll();
           return;
         }
-        state.runtime = response.runtime ?? {
-          config: state.runtime?.config ?? { bridgeUrl: "", token: "" },
-          browserSessionId: ""
-        };
-        state.statusText = t(state, "waiting");
-        clearSelectionState(state);
-        renderAll();
+        destroyOverlay();
       } catch (error) {
         console.error("[Pi UI Bridge] Disconnect error:", error);
         state.statusText = "断开连接失败";
         renderAll();
       }
     });
-    
+
     refreshButton?.addEventListener("click", () => { void loadRuntime(); });
     openDomButton?.addEventListener("click", () => {
       if (!state.selectedElement || !state.selecting) {
@@ -1389,32 +1308,24 @@ async function boot() {
       renderAll();
     });
     panelPrompt?.addEventListener("input", () => {
-      console.log("[Pi UI Bridge] Input event, value:", panelPrompt.value);
       state.promptDraft = panelPrompt.value;
     });
     panelPrompt?.addEventListener("pointerdown", (event) => {
-      console.log("[Pi UI Bridge] Pointerdown on textarea");
-      // 关键：强制设置焦点，绕过弹窗的焦点陷阱
       panelPrompt?.focus();
-      // 设置光标到末尾
       if (panelPrompt) {
         panelPrompt.setSelectionRange(panelPrompt.value.length, panelPrompt.value.length);
       }
-      console.log("[Pi UI Bridge] Textarea focused and cursor positioned");
       event.stopPropagation();
       event.stopImmediatePropagation();
     }, true);
     panelPrompt?.addEventListener("click", (event) => {
-      console.log("[Pi UI Bridge] Click on textarea");
       event.stopPropagation();
       event.stopImmediatePropagation();
     });
     panelPrompt?.addEventListener("keydown", (event) => {
-      console.log("[Pi UI Bridge] Keydown on textarea:", event.key);
       event.stopPropagation();
     });
     panelPrompt?.addEventListener("focusin", (event) => {
-      console.log("[Pi UI Bridge] Focusin on textarea");
       event.stopPropagation();
     });
     panelSendButton?.addEventListener("click", async () => {
@@ -1485,7 +1396,6 @@ async function boot() {
     });
     prompt?.addEventListener("input", () => { state.promptDraft = prompt.value; });
     prompt?.addEventListener("pointerdown", (event) => {
-      // 关键：强制设置焦点，绕过弹窗的焦点陷阱
       prompt?.focus();
       if (prompt) {
         prompt.setSelectionRange(prompt.value.length, prompt.value.length);
@@ -1596,7 +1506,6 @@ async function boot() {
   }
 
   function renderAll() {
-    console.log("[Pi UI Bridge] renderAll called");
     renderPanel();
     renderInlineComposer();
     renderDomModal();
@@ -1634,7 +1543,7 @@ async function boot() {
     state.selectedSourceHint = getSourceHint(promoted);
     state.hoveredElement = null;
     state.childrenExpanded = false;
-    state.composerOpen = true;  // 自动打开 inline composer
+    state.composerOpen = true;
     state.statusText = t(state, "selectedRecorded");
     window.__PI_UI_BRIDGE_LAST_SELECTION__ = {
       pageUrl: window.location.href,
@@ -1654,10 +1563,15 @@ async function boot() {
   }
 
   async function loadRuntime() {
-    console.log("[Pi UI Bridge] loadRuntime called");
     const response = await safeSendMessage<RuntimeResponse>({
       type: MESSAGE_TYPES.contentGetBridgeRuntime
     });
+
+    const hasActiveConnection = Boolean(response.runtime?.config.bridgeUrl && response.runtime?.browserSessionId);
+    if (!hasActiveConnection) {
+      destroyOverlay();
+      return;
+    }
 
     const isAttachedToCurrentTab = response.isCurrentTabAttached ?? (response.attachedTabId == null);
     const isAttachedToCurrentPage = !response.attachedPageUrl || response.attachedPageUrl === window.location.href;
@@ -1669,13 +1583,7 @@ async function boot() {
     }
 
     state.runtime = response.runtime ?? null;
-    console.log("[Pi UI Bridge] Runtime loaded:", state.runtime);
-    if (!state.runtime?.config.bridgeUrl || !state.runtime.browserSessionId) {
-      state.statusText = t(state, "notConnected");
-    } else {
-      state.statusText = `${t(state, "connectedPrefix")}: ${state.runtime.browserSessionId}`;
-    }
-    console.log("[Pi UI Bridge] Status text set to:", state.statusText);
+    state.statusText = `${t(state, "connectedPrefix")}: ${response.runtime?.browserSessionId}`;
     renderAll();
   }
 
@@ -1703,12 +1611,9 @@ async function boot() {
   };
 
   const handleRootPointerDown = (event: PointerEvent) => {
-    console.log('[handleRootPointerDown]', 'event.target:', event.target, 'isInsideUi:', isInsideUi(event));
     if (isInsideUi(event)) {
-      console.log('[handleRootPointerDown] 在 UI 内部，不阻止传播');
       return;
     }
-    console.log('[handleRootPointerDown] 在 UI 外部，阻止传播');
     event.stopPropagation();
   };
 
@@ -1721,22 +1626,15 @@ async function boot() {
     handleHover(event.target);
   };
 
-  // 关键修复：在捕获阶段处理鼠标事件，即使有弹窗也能选择元素
   const handleDocumentMouseMoveCapture = (event: MouseEvent) => {
     if (!state.selecting) {
       return;
     }
-    
-    // 检查是否在 UI 内部
     if (isInsideUi(event)) {
-      console.log("[Pi UI Bridge] Mouse move: inside UI, skipping");
       return;
     }
-    
-    // 在捕获阶段处理 hover，确保即使有弹窗也能工作
     const element = toHTMLElement(event.target);
     if (element) {
-      console.log("[Pi UI Bridge] Mouse move capture: hovering element", element.tagName);
       state.hoveredElement = resolvePreferredSelectionTarget(element);
       syncFrames();
     }
@@ -1821,6 +1719,7 @@ async function boot() {
     modalMask.removeEventListener("click", handleModalMaskClick);
     document.removeEventListener("pointerdown", handleRootPointerDown, true);
     document.removeEventListener("mousemove", handleDocumentMouseMove, true);
+    document.removeEventListener("mousemove", handleDocumentMouseMoveCapture, true);
     document.removeEventListener("click", handleDocumentClick, true);
     window.removeEventListener("pointermove", handleWindowPointerMove);
     window.removeEventListener("pointerup", handleWindowPointerUp);
@@ -1831,44 +1730,35 @@ async function boot() {
   }
 
   modalMask.addEventListener("click", handleModalMaskClick);
-  
-  // 在 modal 上添加点击事件处理器，检查是否点击在 modal 外部
   modal.addEventListener("click", (event) => {
-    // 检查是否点击在 modal 内部
     if (event.target === modal || modal.contains(event.target as Node)) {
-      return;  // 点击在 modal 内部，不处理
+      return;
     }
-    // 点击在 modal 外部（即 mask 上），关闭 modal
     handleModalMaskClick();
   }, true);
-  
-  // 关键修复：全局焦点管理器，防止弹窗的焦点陷阱
+
   document.addEventListener("focusin", (event) => {
     const target = event.target;
     if (target instanceof HTMLTextAreaElement && (target.id === "piuiPanelPrompt" || target.id === "piuiInlinePrompt")) {
-      console.log("[Pi UI Bridge] Global focusin: textarea focused");
       event.stopPropagation();
     }
   }, true);
-  
-  // 防止焦点离开 textarea
+
   document.addEventListener("focusout", (event) => {
     const target = event.target;
     if (target instanceof HTMLTextAreaElement && (target.id === "piuiPanelPrompt" || target.id === "piuiInlinePrompt")) {
       const activeDialog = getActiveDialogRoot();
       if (activeDialog) {
-        console.log("[Pi UI Bridge] Global focusout: preventing focus loss from textarea");
         event.preventDefault();
         event.stopPropagation();
-        // 立即重新设置焦点
         target.focus();
       }
     }
   }, true);
-  
+
   document.addEventListener("pointerdown", handleRootPointerDown, true);
   document.addEventListener("mousemove", handleDocumentMouseMove, true);
-  document.addEventListener("mousemove", handleDocumentMouseMoveCapture, true);  // 捕获阶段处理
+  document.addEventListener("mousemove", handleDocumentMouseMoveCapture, true);
   document.addEventListener("click", handleDocumentClick, true);
   window.addEventListener("pointermove", handleWindowPointerMove);
   window.addEventListener("pointerup", handleWindowPointerUp);
@@ -1876,19 +1766,6 @@ async function boot() {
   window.addEventListener("scroll", handleWindowScroll, true);
 
   await loadRuntime();
-  
-  // 测试：验证输入框是否能接收事件
-  setTimeout(() => {
-    const textarea = document.querySelector('[data-pi-ui-bridge-ui="true"] textarea');
-    if (textarea) {
-      console.log("[Pi UI Bridge] Textarea found:", textarea);
-      console.log("[Pi UI Bridge] Textarea pointer-events:", window.getComputedStyle(textarea).pointerEvents);
-      console.log("[Pi UI Bridge] Textarea disabled:", (textarea as HTMLTextAreaElement).disabled);
-      console.log("[Pi UI Bridge] Textarea readonly:", (textarea as HTMLTextAreaElement).readOnly);
-    } else {
-      console.log("[Pi UI Bridge] Textarea NOT found!");
-    }
-  }, 1000);
 }
 
 void boot();

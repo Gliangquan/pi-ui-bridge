@@ -855,8 +855,8 @@ function toSelection(element: HTMLElement): ContentSelection {
 function isInsideUi(event: Event): boolean {
   const inPath = event.composedPath().some((node) => {
     if (node instanceof HTMLElement) {
-      // 排除 modal mask，允许在 mask 上选择元素
-      if (node.className === "piui-modal-mask") {
+      // 排除 modal mask 和 modal，允许在它们上面选择元素
+      if (node.className === "piui-modal-mask" || node.className === "piui-modal") {
         return false;
       }
       return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID;
@@ -878,8 +878,8 @@ function isInsideUi(event: Event): boolean {
   const elements = document.elementsFromPoint(event.clientX, event.clientY);
   return elements.some((node) => {
     if (node instanceof HTMLElement) {
-      // 排除 modal mask
-      if (node.className === "piui-modal-mask") {
+      // 排除 modal mask 和 modal
+      if (node.className === "piui-modal-mask" || node.className === "piui-modal") {
         return false;
       }
       return node.dataset.piUiBridgeUi === "true" || node.id === HOST_ID || node.closest(`#${HOST_ID}`) !== null;

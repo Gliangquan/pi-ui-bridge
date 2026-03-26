@@ -437,7 +437,7 @@ const CSS_TEXT = `
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.24);
-  pointer-events: auto;
+  pointer-events: none;  /* 关键：改为 none，让事件穿过 mask */
 }
 .piui-modal {
   position: fixed;
@@ -1759,6 +1759,16 @@ async function boot() {
   }
 
   modalMask.addEventListener("click", handleModalMaskClick);
+  
+  // 在 modal 上添加点击事件处理器，检查是否点击在 modal 外部
+  modal.addEventListener("click", (event) => {
+    // 检查是否点击在 modal 内部
+    if (event.target === modal || modal.contains(event.target as Node)) {
+      return;  // 点击在 modal 内部，不处理
+    }
+    // 点击在 modal 外部（即 mask 上），关闭 modal
+    handleModalMaskClick();
+  }, true);
   
   // 关键修复：全局焦点管理器，防止弹窗的焦点陷阱
   document.addEventListener("focusin", (event) => {
